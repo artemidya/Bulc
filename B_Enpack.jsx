@@ -1562,6 +1562,20 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
             mk     = findByNameDeep(pasted, mName);
             mkB    = mk ? mk.geometricBounds
                         : [board.rect[0], board.rect[1], board.rect[2], board.rect[3]];
+            
+            // Normalize: move all pasted items so marker is at (0,0)
+            // This ensures cached master has consistent coordinates regardless
+            // of where the artboard was in the source file.
+            if (mk) {
+                var offsetX = mkB[0];
+                var offsetY = mkB[1];
+                for (var ni = 0; ni < pasted.length; ni++) {
+                    try { pasted[ni].translate(-offsetX, -offsetY); } catch(nErr) {}
+                }
+                // Update mkB to reflect normalized position
+                mkB = [0, 0, mkB[2] - offsetX, mkB[3] - offsetY];
+            }
+            
             break;
         } else {
             if (!pasteHadRetry) {
