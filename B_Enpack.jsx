@@ -1319,19 +1319,27 @@ function isCircleMarkerPath(item) {
 function tagOperationalPaths(srcDoc, board) {
     var changed = [];
     function scan(container) {
-        var i;
-        for (i = 0; i < container.pathItems.length; i++) {
-            var item = container.pathItems[i], kind = sourceLayerKind(item);
-            if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
-            if (!kind || !intersectsBoard(item, board.rect)) continue;
-            try { changed.push({ item: item, name: item.name }); item.name = OPERATIONAL_PFX + kind + '__' + i; } catch(e) {}
-        }
-        for (i = 0; i < container.groupItems.length; i++) {
-            scan(container.groupItems[i]);
-        }
-        for (i = 0; i < container.compoundPathItems.length; i++) {
-            scan(container.compoundPathItems[i]);
-        }
+        if (!container) return;
+        var i, item, kind;
+        try {
+            for (i = 0; i < container.pathItems.length; i++) {
+                item = container.pathItems[i];
+                kind = sourceLayerKind(item);
+                if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
+                if (!kind || !intersectsBoard(item, board.rect)) continue;
+                try { changed.push({ item: item, name: item.name }); item.name = OPERATIONAL_PFX + kind + '__' + i; } catch(e) {}
+            }
+        } catch(e) {}
+        try {
+            for (i = 0; i < container.groupItems.length; i++) {
+                scan(container.groupItems[i]);
+            }
+        } catch(e) {}
+        try {
+            for (i = 0; i < container.compoundPathItems.length; i++) {
+                scan(container.compoundPathItems[i]);
+            }
+        } catch(e) {}
     }
     scan(srcDoc);
     return changed;
@@ -1579,6 +1587,7 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
 }
 
 function getCachedArtEntry(ctx, cell, cache) {
+    if (!cell || !cell.board) return null;
     var board = cell.board;
     var key = artCacheKey(board);
     if (ctx.artCache.hasOwnProperty(key)) {
@@ -1635,7 +1644,7 @@ function placeCachedArtGroup(ctx, entry, cell, parentGroup) {
 }
 
 function renderCellFromArtCache(ctx, cell, cache, parentGroup) {
-    if (!SETTINGS.RENDER_ART_CACHE) return false;
+    if (!SETTINGS.RENDER_ART_CACHE || !ctx || !cell || !cache) return false;
     var entry = getCachedArtEntry(ctx, cell, cache);
     if (!entry) return false;
     if (!placeCachedArtGroup(ctx, entry, cell, parentGroup)) return false;
@@ -1668,7 +1677,8 @@ function getLabelFont() {
 }
 
 function drawLabel(destDoc, group, addr, cell, sheetDocTop) {
-    if (cell.labelY < 0) return;
+    if (!cell || cell.labelY < 0) return;
+    if (!addr || !addr.label) return;
     var framePad = mm(SETTINGS.LABEL_FRAME_PAD_MM);
     var blockInset = mm(SETTINGS.LABEL_BLOCK_INSET_MM);
     var labelT = sheetDocTop - cell.labelY;
@@ -1685,10 +1695,10 @@ function drawLabel(destDoc, group, addr, cell, sheetDocTop) {
     } catch(e) {}
     try { tf.textRange.paragraphAttributes.justification = Justification.LEFT; } catch(e2) {}
 
-    // Point text lets the frame follow the actual glyph bounds.  This avoids a
-    // fixed-width label box and gives the requested 2 mm margin on every side.
+    // Point text lets the frame follow the actual glyph bounds.
     tf.position = [cell.sheetX + blockInset + framePad, labelT - blockInset - framePad];
     var bounds = tf.visibleBounds;
+    if (!bounds) { try { tf.remove(); } catch(e4) {} return; }
     tf.translate(cell.sheetX + blockInset + framePad - bounds[0],
                  labelT - blockInset - framePad - bounds[1]);
     bounds = tf.visibleBounds;
@@ -1782,24 +1792,31 @@ function setTechnicalStroke(item, color, widthPt) {
 }
 function routeTaggedOperationalPaths(tech, container) {
     function scan(parent) {
+        if (!parent) return;
         var i, p, name;
-        for (i = parent.pathItems.length - 1; i >= 0; i--) {
-            p = parent.pathItems[i]; name = '';
-            try { name = String(p.name || ''); } catch(e) {}
-            if (name.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) {
-                setTechnicalStroke(p, black(), 0.2835);
-                p.move(tech.magnets, ElementPlacement.PLACEATEND);
-            } else if (name.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
-                setTechnicalStroke(p, makeCMYK(100, 0, 0, 0), 0.284);
-                p.move(tech.cutPaths, ElementPlacement.PLACEATEND);
+        try {
+            for (i = parent.pathItems.length - 1; i >= 0; i--) {
+                p = parent.pathItems[i]; name = '';
+                try { name = String(p.name || ''); } catch(e) {}
+                if (name.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) {
+                    setTechnicalStroke(p, black(), 0.2835);
+                    p.move(tech.magnets, ElementPlacement.PLACEATEND);
+                } else if (name.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
+                    setTechnicalStroke(p, makeCMYK(100, 0, 0, 0), 0.284);
+                    p.move(tech.cutPaths, ElementPlacement.PLACEATEND);
+                }
             }
-        }
-        for (i = parent.groupItems.length - 1; i >= 0; i--) {
-            scan(parent.groupItems[i]);
-        }
-        for (i = parent.compoundPathItems.length - 1; i >= 0; i--) {
-            scan(parent.compoundPathItems[i]);
-        }
+        } catch(e) {}
+        try {
+            for (i = parent.groupItems.length - 1; i >= 0; i--) {
+                scan(parent.groupItems[i]);
+            }
+        } catch(e) {}
+        try {
+            for (i = parent.compoundPathItems.length - 1; i >= 0; i--) {
+                scan(parent.compoundPathItems[i]);
+            }
+        } catch(e) {}
     }
     scan(container);
 }
@@ -1839,6 +1856,7 @@ function createSheetRenderContext(sheetData) {
     };
 }
 function ensureAddressGroup(ctx, addr) {
+    if (!ctx || !ctx.addrGroups || !addr || !addr.label) return null;
     if (!ctx.addrGroups[addr.label]) {
         var grp  = ctx.doc.groupItems.add();
         grp.name = 'Addr:' + addr.label;
@@ -1915,7 +1933,7 @@ function afterRenderAttemptMaintenance() {
 function renderOneCell(ctx, cell, cache) {
     var addr  = cell.addr;
     var group = ensureAddressGroup(ctx, addr);
-    drawLabel(ctx.doc, group, addr, cell, ctx.sheetDocTop);
+    if (group) drawLabel(ctx.doc, group, addr, cell, ctx.sheetDocTop);
     
     var rendered = false;
     if (SETTINGS.RENDER_ART_CACHE) {
@@ -1924,8 +1942,9 @@ function renderOneCell(ctx, cell, cache) {
     }
     
     if (!rendered) {
+        if (!cell.board) return;
         var src = getRenderSourceDoc(cache, cell.board);
-        rendered = renderCell(src.doc, ctx.doc, cell, group, ctx.sheetDocTop, src.state);
+        rendered = group ? renderCell(src.doc, ctx.doc, cell, group, ctx.sheetDocTop, src.state) : false;
     }
     
     if (rendered) {
