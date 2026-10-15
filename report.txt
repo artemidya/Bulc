@@ -1,11 +1,11 @@
 Bulch Enpack common build report
-Started:  2026-10-15 12:35:15
-Finished: 2026-10-15 12:37:14
-Total time: 119016 ms (119 s)
+Started:  2026-10-15 13:09:06
+Finished: 2026-10-15 13:13:11
+Total time: 244638 ms (244.6 s)
 
 Source data: C:\BULCH\build\layout-data.current.json
 Selected table: C:\BULCH\build\list1.xlsx
-Sheet: 3000x2000 mm
+Sheet: 500x500 mm
 Fuzzy threshold: 0.75
 
 Table rows: 26
@@ -15,16 +15,16 @@ Built addresses: 1
 Matched artboards: 28
 Layout cells: 28
 Placed artboards: 28
-Output sheets: 1
+Output sheets: 2
 Warnings/errors: 1
 
 Timings:
-  load:     6722 ms (6.7 s)
-  scan:     19150 ms (19.2 s)
-  layout:   1 ms (0 s)
-  render:   77278 ms (77.3 s)
-  finalize: 593 ms (0.6 s)
-  save:     325 ms (0.3 s)
+  load:     13709 ms (13.7 s)
+  scan:     19517 ms (19.5 s)
+  layout:   0 ms (0 s)
+  render:   193552 ms (193.6 s)
+  finalize: 8413 ms (8.4 s)
+  save:     585 ms (0.6 s)
 
 Render diagnostics:
   attempted cells: 28
@@ -43,16 +43,19 @@ Checks:
   matched == layout cells: OK (28 vs 28)
   layout cells == placed: OK (28 vs 28)
   layout overlaps: OK (0)
-  output files == sheets: OK (1 vs 1)
+  output files == sheets: OK (2 vs 2)
 
 Address summary (Expected=copies after quantity, Matched=artboard found, Placed=rendered):
   [CHECK] Допик | expected=29 matched=28 placed=28 missing=1 renderFailed=0
 
-=== Sheet 1 — 28 cells, 1 addresses ===
-  Допик (28 cells) bbox=0x0 232.3x1991.4 mm
+=== Sheet 1 — 24 cells, 1 addresses ===
+  Допик (24 cells) bbox=0x0 481.5x498.4 mm
+=== Sheet 2 — 4 cells, 1 addresses ===
+  Допик (4 cells) bbox=0x0 100x292.6 mm
 
 Output files:
   C:\BULCH\out\sheet_001.ai
+  C:\BULCH\out\sheet_002.ai
 
 Row issues (1):
   [scan-error] row=8 addr=Допик product=Медовик source=Пирожные и торты.ai | an Illustrator error occurred: 1346458189 ('PARM')
@@ -73,13 +76,17 @@ Rows: 26, Items: 26, Unresolved: 0
 
 Data: C:\BULCH\build\layout-data.current.json
 Rows: 26
+RETRY FAILED: row 8 | an Illustrator error occurred: 1346458189 ('PARM')
 WARN: SCAN ERROR: row 8 | Медовик | an Illustrator error occurred: 1346458189 ('PARM')
 FUZZY [words 93%]: 'Ценник New маленький' -> 'Ценник Новинка (new) маленький'
 GENERIC-MATCH: 'Чиз Черничный МИНИ' -> 'Чиз черничный'
 FUZZY [words 100%]: 'Миндальная слойка' -> 'Слойка миндальная'
 Expected copies after quantity: 29
 Addresses: 1, artboards matched: 28
-Sheets needed: 1
-Render sheet 1/1: 28 cells
-Render sheet 1/1: Допик
+Sheets needed: 2
+Render sheet 1/2: 24 cells
+Render sheet 1/2: Допик
 Saving: C:\BULCH\out\sheet_001.ai
+Render sheet 2/2: 4 cells
+Render sheet 2/2: Допик
+Saving: C:\BULCH\out\sheet_002.ai
