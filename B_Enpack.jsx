@@ -1088,12 +1088,49 @@ function buildAddressesFromData(data) {
                 var retryOk = false;
                 try {
                     safeGC(); safeRedraw(); safeSleep(500);
+                    // Check if the source document is still open
+                    var docStillOpen = false;
+                    try { docStillOpen = !srcDoc.closed; } catch(dsCheck) {}
+                    if (!docStillOpen) {
+                        log('Document closed after error, skipping retry: row ' + item.rowNumber + ' | ' + item.product);
+                        throw rowError;  // Re-throw original error
+                    }
                     var addr2     = getAddress(item.address || 'output');
                     var srcEntry2 = getSourceEntry(item.sourceFile);
                     var srcDoc2   = srcEntry2.doc;
+                    if (!srcDoc2 || srcDoc2.closed) {
+                        log('Source doc unavailable for retry: row ' + item.rowNumber);
+                        throw rowError;
+                    }
                     var abIndex2  = findArtboardByName(srcDoc2, item.product, srcEntry2.index, srcEntry2.matchCache);
                     if (abIndex2 >= 0) {
-                        var rect2 = srcDoc2.artboards[abIndex2].artboardRect;
+                        // Try to access artboard rect with detailed diagnostics
+                        var rect2 = null;
+                        try {
+                            rect2 = srcDoc2.artboards[abIndex2].artboardRect;
+                            log('Retry artboardRect OK: row ' + item.rowNumber + ' abIndex=' + abIndex2 +
+                                ' rect=[' + r1(rect2[0]) + ',' + r1(rect2[1]) + ',' + r1(rect2[2]) + ',' + r1(rect2[3]) + ']');
+                        } catch(rect2Error) {
+                            log('Retry artboardRect FAILED: row ' + item.rowNumber + ' abIndex=' + abIndex2 +
+                                ' name=' + srcDoc2.artboards[abIndex2].name +
+                                ' error=' + (rect2Error.message || rect2Error));
+                            // Try to get bounds from artboard properties
+                            try {
+                                var ab2 = srcDoc2.artboards[abIndex2];
+                                log('Artboard details: name=' + ab2.name + 
+                                    ' index=' + abIndex2 + '/' + srcDoc2.artboards.length);
+                                // Try visible bounds of artboard
+                                try {
+                                    var abRect = ab2.artboardRect;
+                                    log('Second attempt artboardRect: [' + r1(abRect[0]) + ',' + r1(abRect[1]) + ',' + 
+                                        r1(abRect[2]) + ',' + r1(abRect[3]) + ']');
+                                    rect2 = abRect;
+                                } catch(abRectErr) {
+                                    log('Second artboardRect attempt also failed');
+                                }
+                            } catch(abDiagErr) {}
+                            if (!rect2) throw rect2Error;
+                        }
                         var ri2   = rectInfo(rect2);
                         for (var rc2 = 0; rc2 < copyCount; rc2++) {
                             var board2 = {
@@ -2099,6 +2136,9 @@ function saveDoc(doc, outFile) {
     var opt = new IllustratorSaveOptions();
     opt.pdfCompatible = SETTINGS.PDF_COMPATIBLE;
     opt.compressed    = SETTINGS.COMPRESSED_SAVE;
+    // Remove existing file first — DONTDISPLAYALERTS suppresses the overwrite
+    // dialog and Illustrator cancels the save instead of overwriting.
+    try { if (outFile.exists) outFile.remove(); } catch(e) {}
     doc.saveAs(outFile, opt);
 }
 function countSheetCells(sheets) {
