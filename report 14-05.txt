@@ -1,0 +1,136 @@
+Bulch Enpack common build report
+Started:  2026-10-15 14:00:19
+Finished: 2026-10-15 14:04:03
+Total time: 224254 ms (224.3 s)
+
+Source data: C:\BULCH\build\layout-data.current.json
+Selected table: C:\BULCH\build\list1.xlsx
+Sheet: 700x700 mm
+Fuzzy threshold: 0.75
+
+Table rows: 26
+Expected copies: 29
+Table addresses: 1
+Built addresses: 1
+Matched artboards: 28
+Layout cells: 28
+Placed artboards: 28
+Output sheets: 1
+Warnings/errors: 26
+
+Timings:
+  load:     7046 ms (7 s)
+  scan:     19304 ms (19.3 s)
+  layout:   1 ms (0 s)
+  render:   177625 ms (177.6 s)
+  finalize: 8430 ms (8.4 s)
+  save:     320 ms (0.3 s)
+
+Render diagnostics:
+  attempted cells: 28
+  paste retry cells: 0
+  paste retry attempts: 0
+  paste failures after retries: 0
+  art cache copies: 25
+  art cache placements: 28
+  art cache hits: 3
+  art cache fallbacks: 0
+  art cache duplicate failures: 0
+  maintenance runs: 0 (every 75 cells)
+
+Checks:
+  expected copies == matched + missing: OK (29 vs 28 + 1)
+  matched == layout cells: OK (28 vs 28)
+  layout cells == placed: OK (28 vs 28)
+  layout overlaps: OK (0)
+  output files == sheets: OK (1 vs 1)
+
+Address summary (Expected=copies after quantity, Matched=artboard found, Placed=rendered):
+  [CHECK] Допик | expected=29 matched=28 placed=28 missing=1 renderFailed=0
+
+=== Sheet 1 — 28 cells, 1 addresses ===
+  Допик (28 cells) bbox=0x0 450.9x681.1 mm
+
+Output files:
+  C:\BULCH\out\sheet_001.ai
+
+Row issues (1):
+  [scan-error] row=8 addr=Допик product=Медовик source=Пирожные и торты.ai | an Illustrator error occurred: 1346458189 ('PARM')
+
+Match review (3):
+  [AUTO 93% words] rows=13 addr=Допик product=Ценник New маленький source=Лежит отдельно.ai -> Ценник Новинка (new) маленький
+  [AUTO 94% generic] rows=15 addr=Допик product=Чиз Черничный МИНИ source=Торты на заказ.ai -> Чиз черничный
+  [AUTO 100% words] rows=25 addr=Допик product=Миндальная слойка source=Слойки.ai -> Слойка миндальная
+
+Warnings (26):
+  SCAN ERROR: row 8 | Медовик | an Illustrator error occurred: 1346458189 ('PARM')
+  Marker missing, using artboard rect as fallback: Допик row 2
+  Marker missing, using artboard rect as fallback: Допик row 3
+  Marker missing, using artboard rect as fallback: Допик row 4
+  Marker missing, using artboard rect as fallback: Допик row 5
+  Marker missing, using artboard rect as fallback: Допик row 6
+  Marker missing, using artboard rect as fallback: Допик row 7
+  Marker missing, using artboard rect as fallback: Допик row 9
+  Marker missing, using artboard rect as fallback: Допик row 10
+  Marker missing, using artboard rect as fallback: Допик row 11
+  Marker missing, using artboard rect as fallback: Допик row 12
+  Marker missing, using artboard rect as fallback: Допик row 13
+  Marker missing, using artboard rect as fallback: Допик row 14
+  Marker missing, using artboard rect as fallback: Допик row 15
+  Marker missing, using artboard rect as fallback: Допик row 16
+  Marker missing, using artboard rect as fallback: Допик row 17
+  Marker missing, using artboard rect as fallback: Допик row 18
+  Marker missing, using artboard rect as fallback: Допик row 19
+  Marker missing, using artboard rect as fallback: Допик row 20
+  Marker missing, using artboard rect as fallback: Допик row 21
+  Marker missing, using artboard rect as fallback: Допик row 22
+  Marker missing, using artboard rect as fallback: Допик row 23
+  Marker missing, using artboard rect as fallback: Допик row 24
+  Marker missing, using artboard rect as fallback: Допик row 25
+  Marker missing, using artboard rect as fallback: Допик row 26
+  Marker missing, using artboard rect as fallback: Допик row 27
+
+Log:
+Selected table: C:\BULCH\build\list1.xlsx
+XLSX->JSON: OK: C:\BULCH\build\layout-data.current.json
+Report: C:/BULCH/build/layout-data.match-report.txt
+Rows: 26, Items: 26, Unresolved: 0
+
+Data: C:\BULCH\build\layout-data.current.json
+Rows: 26
+RETRY FAILED: row 8 | an Illustrator error occurred: 1346458189 ('PARM')
+WARN: SCAN ERROR: row 8 | Медовик | an Illustrator error occurred: 1346458189 ('PARM')
+FUZZY [words 93%]: 'Ценник New маленький' -> 'Ценник Новинка (new) маленький'
+GENERIC-MATCH: 'Чиз Черничный МИНИ' -> 'Чиз черничный'
+FUZZY [words 100%]: 'Миндальная слойка' -> 'Слойка миндальная'
+Expected copies after quantity: 29
+Addresses: 1, artboards matched: 28
+Sheets needed: 1
+Render sheet 1/1: 28 cells
+Render sheet 1/1: Допик
+WARN: Marker missing, using artboard rect as fallback: Допик row 2
+WARN: Marker missing, using artboard rect as fallback: Допик row 3
+WARN: Marker missing, using artboard rect as fallback: Допик row 4
+WARN: Marker missing, using artboard rect as fallback: Допик row 5
+WARN: Marker missing, using artboard rect as fallback: Допик row 6
+WARN: Marker missing, using artboard rect as fallback: Допик row 7
+WARN: Marker missing, using artboard rect as fallback: Допик row 9
+WARN: Marker missing, using artboard rect as fallback: Допик row 10
+WARN: Marker missing, using artboard rect as fallback: Допик row 11
+WARN: Marker missing, using artboard rect as fallback: Допик row 12
+WARN: Marker missing, using artboard rect as fallback: Допик row 13
+WARN: Marker missing, using artboard rect as fallback: Допик row 14
+WARN: Marker missing, using artboard rect as fallback: Допик row 15
+WARN: Marker missing, using artboard rect as fallback: Допик row 16
+WARN: Marker missing, using artboard rect as fallback: Допик row 17
+WARN: Marker missing, using artboard rect as fallback: Допик row 18
+WARN: Marker missing, using artboard rect as fallback: Допик row 19
+WARN: Marker missing, using artboard rect as fallback: Допик row 20
+WARN: Marker missing, using artboard rect as fallback: Допик row 21
+WARN: Marker missing, using artboard rect as fallback: Допик row 22
+WARN: Marker missing, using artboard rect as fallback: Допик row 23
+WARN: Marker missing, using artboard rect as fallback: Допик row 24
+WARN: Marker missing, using artboard rect as fallback: Допик row 25
+WARN: Marker missing, using artboard rect as fallback: Допик row 26
+WARN: Marker missing, using artboard rect as fallback: Допик row 27
+Saving: C:\BULCH\out\sheet_001.ai
