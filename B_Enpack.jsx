@@ -1293,7 +1293,8 @@ function tryCopyBoard(srcDoc, board, mName) {
         srcDoc.selection = null;
         return false;
     }
-    var operationalNames = tagOperationalPaths(srcDoc, board);
+    var operationalNames = tagOperationalPaths(srcDoc, board, mk);
+    mk.name = mName;
     app.executeMenuCommand('copy');
     restoreOperationalPathNames(operationalNames);
     try { mk.remove(); } catch(e3) {}
@@ -1339,7 +1340,7 @@ function isCircleMarkerPath(item) {
         return false; 
     }
 }
-function tagOperationalPaths(srcDoc, board) {
+function tagOperationalPaths(srcDoc, board, excludeItem) {
     var changed = [];
     function scan(container) {
         if (!container) return;
@@ -1347,6 +1348,7 @@ function tagOperationalPaths(srcDoc, board) {
         try {
             for (i = 0; i < container.pathItems.length; i++) {
                 item = container.pathItems[i];
+                if (item === excludeItem) continue;
                 kind = sourceLayerKind(item);
                 if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
                 if (!kind || !intersectsBoard(item, board.rect)) continue;
