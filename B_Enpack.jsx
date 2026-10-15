@@ -1399,21 +1399,12 @@ function pasteIntoDestDoc(destDoc) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  RENDER CELL
 // ─────────────────────────────────────────────────────────────────────────────
-function rotateGroup90(destDoc, grp, destL, destT, sourceW, sourceH) {
-    var anchor = null;
+function rotateGroup90(grp, destL, destT) {
     try {
-        // The anchor represents the original artboard, not the visible artwork.
-        // It keeps rotated artwork centred in its cell even when the artwork has
-        // transparent/empty margins or extends beyond the artboard bounds.
-        anchor = destDoc.pathItems.rectangle(destT, destL, sourceW, sourceH);
-        anchor.filled = false;
-        anchor.stroked = false;
-        anchor.move(grp, ElementPlacement.PLACEATEND);
         grp.rotate(-90, true, true, true, true, Transformation.CENTER);
-        var anchorBounds = anchor.geometricBounds;
-        grp.translate(destL - anchorBounds[0], destT - anchorBounds[1]);
+        var gb = grp.geometricBounds;
+        grp.translate(destL - gb[0], destT - gb[1]);
     } catch(e) { warn('Rotate failed: ' + e.message); }
-    finally { try { if (anchor) anchor.remove(); } catch(e2) {} }
 }
 
 function renderCell(srcDoc, destDoc, cell, parentGroup, sheetDocTop, docState) {
@@ -1479,7 +1470,7 @@ function renderCell(srcDoc, destDoc, cell, parentGroup, sheetDocTop, docState) {
     }
     if (mk) try { mk.remove(); } catch(e3) {}
     artGrp.translate(destL - mkB[0], destT - mkB[1]);
-    if (board.rotated90) rotateGroup90(destDoc, artGrp, destL, destT, board.origW, board.origH);
+    if (board.rotated90) rotateGroup90(artGrp, destL, destT);
     
     if (SETTINGS.CLIP_TO_ARTBOARD) {
         var cg = destDoc.groupItems.add();
@@ -1616,7 +1607,7 @@ function placeCachedArtGroup(ctx, entry, cell, parentGroup) {
         artGrp = entry.group.duplicate(parentGroup, ElementPlacement.PLACEATEND);
         artGrp.name = cell.addr.label + '/row' + board.rowNumber + '/' + board.product;
         artGrp.translate(destL - entry.anchor[0], destT - entry.anchor[1]);
-        if (board.rotated90) rotateGroup90(destDoc, artGrp, destL, destT, board.origW, board.origH);
+        if (board.rotated90) rotateGroup90(artGrp, destL, destT);
         
         if (SETTINGS.CLIP_TO_ARTBOARD) {
             clipGrp = destDoc.groupItems.add();
