@@ -1,0 +1,12 @@
+{
+  "name": "bulch-enpack-build-tools",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Build tools for Bulch Enpack — XLSX to layout-data.json converter",
+  "scripts": {
+    "convert": "node convert-xlsx-to-layout-json.js"
+  },
+  "dependencies": {
+    "xlsx": "^0.18.5"
+  }
+}

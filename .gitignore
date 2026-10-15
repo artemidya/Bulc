@@ -1,0 +1,18 @@
+# Build output
+out/
+build/layout-data.json
+build/layout-data.current.json
+build/layout-preflight.txt
+build/layout-report.txt
+build/xlsx-convert-runner.vbs
+build/xlsx-convert-status.txt
+build/xlsx-convert-output.txt
+build/List.snapshot.xlsx
+
+# Node.js
+build/node_modules/
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
