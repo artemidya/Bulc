@@ -1654,6 +1654,21 @@ function placeCachedArtGroup(ctx, entry, cell, parentGroup) {
             artGrp.move(clipGrp, ElementPlacement.PLACEATEND);
             clipGrp.clipped = true;
             clipGrp.move(parentGroup, ElementPlacement.PLACEATEND);
+            
+            // Diagnostic: log if content might be outside clipping bounds
+            try {
+                var artBounds = artGrp.geometricBounds;
+                var clipRight = destL + board.w;
+                var clipBottom = destT - board.h;
+                if (artBounds[0] < destL - 1 || artBounds[2] > clipRight + 1 ||
+                    artBounds[1] > destT + 1 || artBounds[3] < clipBottom - 1) {
+                    log('DIAG: row ' + board.rowNumber + ' content outside clip: art=[' +
+                        r1(artBounds[0]) + ',' + r1(artBounds[1]) + ',' +
+                        r1(artBounds[2]) + ',' + r1(artBounds[3]) + '] clip=[' +
+                        r1(destL) + ',' + r1(destT) + ',' +
+                        r1(clipRight) + ',' + r1(clipBottom) + ']');
+                }
+            } catch(diagErr) {}
         }
         
         destDoc.selection = null;
