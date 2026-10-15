@@ -1614,6 +1614,12 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
         mkB = [0, 0, mkB[2] - mkB[0], mkB[3] - mkB[1]];
     }
     
+    // Diagnostic: log anchor AFTER normalization
+    log('DIAG cache: row ' + board.rowNumber + ' anchor=[' +
+        r1(mkB[0]) + ',' + r1(mkB[1]) + ',' + r1(mkB[2]) + ',' + r1(mkB[3]) +
+        '] board.w=' + r1(board.w) + ' board.h=' + r1(board.h) +
+        ' rotated=' + board.rotated90);
+    
     try {
         if (!master.pageItems.length) {
             master.remove();
