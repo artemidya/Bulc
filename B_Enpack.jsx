@@ -1588,6 +1588,12 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
     if (!mk) warn('Marker missing, using artboard rect as fallback: ' +
                   label + ' row ' + board.rowNumber);
     
+    // Diagnostic: log anchor and board dimensions
+    log('DIAG cache: row ' + board.rowNumber + ' anchor=[' +
+        r1(mkB[0]) + ',' + r1(mkB[1]) + ',' + r1(mkB[2]) + ',' + r1(mkB[3]) +
+        '] board.w=' + r1(board.w) + ' board.h=' + r1(board.h) +
+        ' rotated=' + board.rotated90);
+    
     var cacheGroup = getSheetArtCacheGroup(ctx);
     var master = destDoc.groupItems.add();
     master.name = '__BEP_CACHE_ART__' + board.idx + '/' + board.product;
