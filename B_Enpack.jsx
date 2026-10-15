@@ -78,7 +78,7 @@ var SETTINGS = {
     REDRAW_EVERY_N_ADDRESSES: 0,
     RENDER_MAINTENANCE_EVERY_CELLS: 75,
     RENDER_MAINTENANCE_DELAY_MS:    100,
-    RENDER_ART_CACHE:              true,
+    RENDER_ART_CACHE:              false,
     PASTE_RETRY_COUNT:              3,
     PASTE_RETRY_DELAY_MS:           250,
     MATCH_REVIEW_ENABLED:           true,
