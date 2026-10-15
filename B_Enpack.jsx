@@ -1562,20 +1562,6 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
             mk     = findByNameDeep(pasted, mName);
             mkB    = mk ? mk.geometricBounds
                         : [board.rect[0], board.rect[1], board.rect[2], board.rect[3]];
-            
-            // Normalize: move all pasted items so marker is at (0,0)
-            // This ensures cached master has consistent coordinates regardless
-            // of where the artboard was in the source file.
-            if (mk) {
-                var offsetX = mkB[0];
-                var offsetY = mkB[1];
-                for (var ni = 0; ni < pasted.length; ni++) {
-                    try { pasted[ni].translate(-offsetX, -offsetY); } catch(nErr) {}
-                }
-                // Update mkB to reflect normalized position
-                mkB = [0, 0, mkB[2] - offsetX, mkB[3] - offsetY];
-            }
-            
             break;
         } else {
             if (!pasteHadRetry) {
@@ -1619,6 +1605,14 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
         catch(e2) { warn('Cache move failed: ' + label + ' row ' + board.rowNumber); }
     }
     if (mk) try { mk.remove(); } catch(e3) {}
+    
+    // Normalize: translate entire master so that anchor is at (0,0)
+    // This must be done AFTER moving items to master, because move() may
+    // reset individual transforms.
+    if (mkB[0] !== 0 || mkB[1] !== 0) {
+        try { master.translate(-mkB[0], -mkB[1]); } catch(normErr) {}
+        mkB = [0, 0, mkB[2] - mkB[0], mkB[3] - mkB[1]];
+    }
     
     try {
         if (!master.pageItems.length) {
