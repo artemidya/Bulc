@@ -1838,6 +1838,7 @@ function createSheetDoc() {
         DocumentColorSpace.CMYK,
         mm(SETTINGS.SHEET_WIDTH_MM),
         mm(SETTINGS.SHEET_HEIGHT_MM));
+    if (!doc) throw new Error('Failed to create sheet document.');
     setMM(doc);
     try { app.coordinateSystem = CoordinateSystem.DOCUMENTCOORDINATESYSTEM; } catch(e) {}
     doc.artboards[0].artboardRect = [
@@ -1978,14 +1979,24 @@ function renderSheetContext(ctx, cache, sheetIndex, sheetCount) {
     var addr      = null;
     
     for (var i = 0; i < cells.length; i++) {
-        if (!addr || addr.label !== cells[i].addr.label) {
+        var cell = cells[i];
+        if (!cell || !cell.addr) continue;
+        if (!addr || addr.label !== cell.addr.label) {
             if (addr && addr.stats) addr.stats.renderMs += (nowMs() - addrStart);
-            addr      = cells[i].addr;
+            addr      = cell.addr;
             addrStart = nowMs();
             lastLabel = addr.label;
             log('Render sheet ' + sheetIndex + '/' + sheetCount + ': ' + lastLabel);
         }
-        renderOneCell(ctx, cells[i], cache);
+        try {
+            renderOneCell(ctx, cell, cache);
+        } catch(cellError) {
+            runStats.renderAttempts = (runStats.renderAttempts || 0) + 1;
+            warn('Cell render error: row ' + (cell.board ? cell.board.rowNumber : '?') +
+                 ' | ' + (cell.addr ? cell.addr.label : '?') +
+                 ' | ' + (cellError && cellError.message ? cellError.message : cellError));
+            recordRenderFailureForCell(cell.addr, cell);
+        }
     }
     if (addr && addr.stats) addr.stats.renderMs += (nowMs() - addrStart);
 }
