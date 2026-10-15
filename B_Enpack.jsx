@@ -1621,17 +1621,8 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
     }
     if (mk) try { mk.remove(); } catch(e3) {}
     
-    // Normalize: translate EACH item individually so content is at (0,0)
-    // This is more reliable than translating the entire master.
-    if (mkB[0] !== 0 || mkB[1] !== 0) {
-        for (var ni = 0; ni < master.pageItems.length; ni++) {
-            try { master.pageItems[ni].translate(-mkB[0], -mkB[1]); } catch(normErr) {}
-        }
-        for (var ng = 0; ng < master.groupItems.length; ng++) {
-            try { master.groupItems[ng].translate(-mkB[0], -mkB[1]); } catch(normErr) {}
-        }
-        mkB = [0, 0, mkB[2] - mkB[0], mkB[1] - mkB[3]];  // Note: mkB[1] - mkB[3] for positive height
-    }
+    // No normalization - use anchor as-is from source coordinates.
+    // placeCachedArtGroup will translate correctly using (destL - anchor[0], destT - anchor[1]).
     
     // Diagnostic: log anchor AFTER normalization
     log('DIAG cache: row ' + board.rowNumber + ' anchor=[' +
