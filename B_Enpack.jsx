@@ -1043,8 +1043,23 @@ function buildAddressesFromData(data) {
                     continue;
                 }
                 
-                var rect = srcDoc.artboards[abIndex].artboardRect;
-                var ri   = rectInfo(rect);
+                try {
+                    var rect = srcDoc.artboards[abIndex].artboardRect;
+                    var ri   = rectInfo(rect);
+                } catch(rectError) {
+                    log('ARTBOARD RECT ERROR: row ' + item.rowNumber + ' | ' + item.product +
+                        ' | abIndex=' + abIndex + ' | error=' + 
+                        (rectError && rectError.message ? rectError.message : rectError));
+                    // Try to get artboard info differently
+                    try {
+                        var ab = srcDoc.artboards[abIndex];
+                        log('Artboard name: ' + ab.name);
+                        log('Artboard index: ' + abIndex + ' of ' + srcDoc.artboards.length);
+                    } catch(abError) {
+                        log('Cannot access artboard: ' + (abError && abError.message ? abError.message : abError));
+                    }
+                    throw rectError;  // Re-throw to trigger retry
+                }
                 for (var copy = 1; copy <= copyCount; copy++) {
                     var board = {
                         idx:            abIndex,
