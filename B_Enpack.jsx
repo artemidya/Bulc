@@ -41,11 +41,9 @@ var SETTINGS = {
     CURRENT_DATA_JSON_RELATIVE: 'build/layout-data.current.json',
     NODE_BIN:                   'node',
     
-    // The launcher selects the sheet orientation; direct launch defaults to portrait.
-    SHEET_WIDTH_MM:  (typeof $.global.__BEP_SHEET_ORIENTATION !== 'undefined' &&
-                      $.global.__BEP_SHEET_ORIENTATION === 'landscape') ? 3000 : 2000,
-    SHEET_HEIGHT_MM: (typeof $.global.__BEP_SHEET_ORIENTATION !== 'undefined' &&
-                      $.global.__BEP_SHEET_ORIENTATION === 'landscape') ? 2000 : 3000,
+    // Sheet size — set by the settings dialog at launch.
+    SHEET_WIDTH_MM:  3000,
+    SHEET_HEIGHT_MM: 2000,
     SHEET_MARGIN_MM: 0,
     
     ARTBOARD_GAP_MM: 3,
@@ -1071,13 +1069,53 @@ function buildAddressesFromData(data) {
                 }
                 
             } catch(rowError) {
-                for (var se = 0; se < copyCount; se++)
-                    recordIssue('scan-error', item, 
-                        rowError && rowError.message ? rowError.message : String(rowError));
-                warn('SCAN ERROR: row ' + (item ? item.rowNumber : '?') + ' | ' +
-                     (item ? item.product : '') + 
-                     (copyCount > 1 ? ' x' + copyCount : '') + ' | ' +
-                     (rowError && rowError.message ? rowError.message : rowError));
+                // Retry once after GC and redraw — PARM errors can be transient.
+                var retryOk = false;
+                try {
+                    safeGC(); safeRedraw(); safeSleep(500);
+                    var addr2     = getAddress(item.address || 'output');
+                    var srcEntry2 = getSourceEntry(item.sourceFile);
+                    var srcDoc2   = srcEntry2.doc;
+                    var abIndex2  = findArtboardByName(srcDoc2, item.product, srcEntry2.index, srcEntry2.matchCache);
+                    if (abIndex2 >= 0) {
+                        var rect2 = srcDoc2.artboards[abIndex2].artboardRect;
+                        var ri2   = rectInfo(rect2);
+                        for (var rc2 = 0; rc2 < copyCount; rc2++) {
+                            var board2 = {
+                                idx: abIndex2,
+                                rect: [rect2[0], rect2[1], rect2[2], rect2[3]],
+                                origW: ri2.origW, origH: ri2.origH,
+                                w: ri2.w, h: ri2.h, rotated90: false,
+                                file: new File(item.sourceFile),
+                                fileKey: item.sourceFile,
+                                product: item.product,
+                                rowNumber: item.rowNumber,
+                                copyIndex: alreadyExpanded ? (item.copyIndex || 1) : (rc2 + 1),
+                                copyCount: copyCount,
+                                sourceFileName: item.sourceFileName || decodedName(new File(item.sourceFile))
+                            };
+                            applyRotation(board2);
+                            addr2.boards.push(board2);
+                            addr2.stats.boardCount = addr2.boards.length;
+                            recordMatchedRow(addr2.label);
+                        }
+                        recordMatchReview(item, lastArtboardMatchInfo);
+                        retryOk = true;
+                        log('RETRY OK: row ' + item.rowNumber + ' | ' + item.product);
+                    }
+                } catch(retryError) {
+                    log('RETRY FAILED: row ' + (item ? item.rowNumber : '?') + ' | ' +
+                        (retryError && retryError.message ? retryError.message : retryError));
+                }
+                if (!retryOk) {
+                    for (var se = 0; se < copyCount; se++)
+                        recordIssue('scan-error', item, 
+                            rowError && rowError.message ? rowError.message : String(rowError));
+                    warn('SCAN ERROR: row ' + (item ? item.rowNumber : '?') + ' | ' +
+                         (item ? item.product : '') + 
+                         (copyCount > 1 ? ' x' + copyCount : '') + ' | ' +
+                         (rowError && rowError.message ? rowError.message : rowError));
+                }
             }
         }
     } finally {
@@ -1280,12 +1318,22 @@ function isCircleMarkerPath(item) {
 }
 function tagOperationalPaths(srcDoc, board) {
     var changed = [];
-    for (var i = 0; i < srcDoc.pathItems.length; i++) {
-        var item = srcDoc.pathItems[i], kind = sourceLayerKind(item);
-        if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
-        if (!kind || !intersectsBoard(item, board.rect)) continue;
-        try { changed.push({ item: item, name: item.name }); item.name = OPERATIONAL_PFX + kind + '__' + i; } catch(e) {}
+    function scan(container) {
+        var i;
+        for (i = 0; i < container.pathItems.length; i++) {
+            var item = container.pathItems[i], kind = sourceLayerKind(item);
+            if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
+            if (!kind || !intersectsBoard(item, board.rect)) continue;
+            try { changed.push({ item: item, name: item.name }); item.name = OPERATIONAL_PFX + kind + '__' + i; } catch(e) {}
+        }
+        for (i = 0; i < container.groupItems.length; i++) {
+            scan(container.groupItems[i]);
+        }
+        for (i = 0; i < container.compoundPathItems.length; i++) {
+            scan(container.compoundPathItems[i]);
+        }
     }
+    scan(srcDoc);
     return changed;
 }
 function restoreOperationalPathNames(changed) {
@@ -1742,17 +1790,27 @@ function setTechnicalStroke(item, color, widthPt) {
     try { item.filled = false; item.stroked = true; item.strokeColor = color; item.strokeWidth = widthPt; } catch(e) {}
 }
 function routeTaggedOperationalPaths(tech, container) {
-    for (var i = container.pathItems.length - 1; i >= 0; i--) {
-        var p = container.pathItems[i], name = '';
-        try { name = String(p.name || ''); } catch(e) {}
-        if (name.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) {
-            setTechnicalStroke(p, black(), 0.2835);
-            p.move(tech.magnets, ElementPlacement.PLACEATEND);
-        } else if (name.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
-            setTechnicalStroke(p, makeCMYK(100, 0, 0, 0), 0.284);
-            p.move(tech.cutPaths, ElementPlacement.PLACEATEND);
+    function scan(parent) {
+        var i, p, name;
+        for (i = parent.pathItems.length - 1; i >= 0; i--) {
+            p = parent.pathItems[i]; name = '';
+            try { name = String(p.name || ''); } catch(e) {}
+            if (name.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) {
+                setTechnicalStroke(p, black(), 0.2835);
+                p.move(tech.magnets, ElementPlacement.PLACEATEND);
+            } else if (name.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
+                setTechnicalStroke(p, makeCMYK(100, 0, 0, 0), 0.284);
+                p.move(tech.cutPaths, ElementPlacement.PLACEATEND);
+            }
+        }
+        for (i = parent.groupItems.length - 1; i >= 0; i--) {
+            scan(parent.groupItems[i]);
+        }
+        for (i = parent.compoundPathItems.length - 1; i >= 0; i--) {
+            scan(parent.compoundPathItems[i]);
         }
     }
+    scan(container);
 }
 function copyAddressControls(ctx, tech) {
     for (var k = 0; k < ctx.sheetData.addrInfos.length; k++) {
@@ -2236,9 +2294,88 @@ function writeReport(outFolder, sheets, addresses) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  SETTINGS DIALOG
+// ─────────────────────────────────────────────────────────────────────────────
+function showSettingsDialog() {
+    var presets = [
+        { label: '3000 × 2000 (альбомный)', w: 3000, h: 2000 },
+        { label: '2000 × 3000 (книжный)',   w: 2000, h: 3000 },
+        { label: '3030 × 2010 (альбомный)',  w: 3030, h: 2010 },
+        { label: '2010 × 3030 (книжный)',    w: 2010, h: 3030 }
+    ];
+
+    try {
+        var w = new Window('dialog', 'Bulch Enpack — Настройки');
+        w.orientation = 'column';
+        w.alignChildren = ['fill', 'top'];
+
+        w.add('statictext', undefined, 'Размер листа (мм):');
+
+        var radioGroup = w.add('panel', undefined, 'Предустановки');
+        radioGroup.orientation = 'column';
+        radioGroup.alignChildren = ['left', 'top'];
+        var radios = [];
+        for (var i = 0; i < presets.length; i++) {
+            var r = radioGroup.add('radiobutton', undefined, presets[i].label);
+            if (i === 0) r.value = true;
+            radios.push(r);
+        }
+
+        var customGroup = w.add('group');
+        customGroup.add('statictext', undefined, 'Ширина:');
+        var widthEdit = customGroup.add('edittext', undefined, String(SETTINGS.SHEET_WIDTH_MM));
+        widthEdit.characters = 6;
+        customGroup.add('statictext', undefined, 'Высота:');
+        var heightEdit = customGroup.add('edittext', undefined, String(SETTINGS.SHEET_HEIGHT_MM));
+        heightEdit.characters = 6;
+
+        for (var ri = 0; ri < radios.length; ri++) {
+            radios[ri].onClick = (function(idx) {
+                return function() {
+                    widthEdit.text  = String(presets[idx].w);
+                    heightEdit.text = String(presets[idx].h);
+                };
+            })(ri);
+        }
+
+        var buttons = w.add('group');
+        buttons.alignment = 'right';
+        var cancelBtn = buttons.add('button', undefined, 'Отмена');
+        var okBtn     = buttons.add('button', undefined, 'Начать сборку');
+        cancelBtn.onClick = function() { w.close(0); };
+        okBtn.onClick     = function() { w.close(1); };
+
+        if (w.show() !== 1) return false;
+
+        var newW = parseInt(widthEdit.text, 10);
+        var newH = parseInt(heightEdit.text, 10);
+        if (isNaN(newW) || isNaN(newH) || newW < 100 || newH < 100) {
+            alert('Недопустимые размеры листа.');
+            return false;
+        }
+        SETTINGS.SHEET_WIDTH_MM  = newW;
+        SETTINGS.SHEET_HEIGHT_MM = newH;
+        return true;
+    } catch(e) {
+        // Fallback to confirm dialog if Window API fails
+        if (!confirm('Размер листа: ' + SETTINGS.SHEET_WIDTH_MM + ' × ' +
+                     SETTINGS.SHEET_HEIGHT_MM + ' мм.\n\nНачать сборку?')) {
+            return false;
+        }
+        return true;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 function main() {
+    // ── Show settings dialog ─────────────────────────────────────
+    try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui0) {}
+    if (!showSettingsDialog()) {
+        return;
+    }
+    
     var prevUI = app.userInteractionLevel;
     app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
     
