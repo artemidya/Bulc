@@ -1144,17 +1144,19 @@ function buildLayout(addresses) {
     var abGap  = mm(SETTINGS.ARTBOARD_GAP_MM);
     var colGap = mm(SETTINGS.COLUMN_GAP_MM);
     
-    // Check: no artboard should be larger than sheet
+    // Check: warn if artboard is larger than sheet, but don't fail
     for (var a0 = 0; a0 < addresses.length; a0++) {
         for (var b0 = 0; b0 < addresses[a0].boards.length; b0++) {
             var brd = addresses[a0].boards[b0];
             var neededW = Math.max(brd.w, labelReserveWidth(addresses[a0].label));
-            if (neededW > sheetW + 0.01)
-                throw new Error('Board wider than sheet: ' + addresses[a0].label + ' row ' + brd.rowNumber +
-                    ' (' + r1(neededW) + ' > ' + r1(sheetW) + ' mm)');
-            if (brd.h + labelH > sheetH + 0.01)
-                throw new Error('Board taller than sheet: ' + addresses[a0].label + ' row ' + brd.rowNumber +
-                    ' (' + r1(brd.h) + '+' + r1(labelH) + ' > ' + r1(sheetH) + ' mm)');
+            if (neededW > sheetW + 0.01) {
+                warn('Board wider than sheet: ' + addresses[a0].label + ' row ' + brd.rowNumber +
+                    ' (' + r1(neededW) + ' > ' + r1(sheetW) + ' mm). Consider using a larger sheet.');
+            }
+            if (brd.h + labelH > sheetH + 0.01) {
+                warn('Board taller than sheet: ' + addresses[a0].label + ' row ' + brd.rowNumber +
+                    ' (' + r1(brd.h) + '+' + r1(labelH) + ' > ' + r1(sheetH) + ' mm). Consider using a larger sheet.');
+            }
         }
     }
     
@@ -1305,16 +1307,37 @@ function intersectsBoard(item, rect) {
 function sourceLayerKind(item) {
     var name = '';
     try { name = String(item.layer.name || '').toLowerCase(); } catch(e) {}
-    if (name.indexOf('magnet') >= 0) return 'MAGNET';
-    if (name.indexOf('cut') >= 0) return 'CUT';
+    // Check for magnet layer (English or Russian)
+    if (name.indexOf('magnet') >= 0 || name.indexOf('магнит') >= 0) return 'MAGNET';
+    // Check for cut layer (English or Russian)
+    if (name.indexOf('cut') >= 0 || name.indexOf('рез') >= 0 || name.indexOf('cutting') >= 0) return 'CUT';
     return '';
 }
 function isCircleMarkerPath(item) {
     try {
-        if (!item.closed || item.filled || item.pathPoints.length !== 4) return false;
-        var b = item.geometricBounds, w = Math.abs(b[2] - b[0]), h = Math.abs(b[1] - b[3]);
-        return w > 0 && h > 0 && Math.abs(w - h) <= Math.max(w, h) * 0.08;
-    } catch(e) { return false; }
+        // Must be closed, not filled
+        if (!item.closed || item.filled) return false;
+        
+        // Check if it's a circle/ellipse (4 pathPoints for a circle drawn with bezier curves)
+        var pointCount = item.pathPoints.length;
+        if (pointCount < 3 || pointCount > 8) return false;  // Allow some flexibility
+        
+        var b = item.geometricBounds;
+        var w = Math.abs(b[2] - b[0]);
+        var h = Math.abs(b[1] - b[3]);
+        
+        // Must be roughly square (circle)
+        if (w < 0.1 || h < 0.1) return false;  // Too small
+        var aspectRatio = Math.max(w, h) / Math.min(w, h);
+        if (aspectRatio > 1.3) return false;  // Not circular enough
+        
+        // Check if it has a stroke (magnet markers should be stroked)
+        if (!item.stroked) return false;
+        
+        return true;
+    } catch(e) { 
+        return false; 
+    }
 }
 function tagOperationalPaths(srcDoc, board) {
     var changed = [];
@@ -1943,7 +1966,10 @@ function renderOneCell(ctx, cell, cache) {
     }
     
     if (!rendered) {
-        if (!cell.board) return;
+        if (!cell.board) {
+            warn('No board for cell: row ' + (cell && cell.board ? cell.board.rowNumber : '?'));
+            return;
+        }
         var src = getRenderSourceDoc(cache, cell.board);
         rendered = group ? renderCell(src.doc, ctx.doc, cell, group, ctx.sheetDocTop, src.state) : false;
     }
