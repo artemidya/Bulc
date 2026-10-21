@@ -734,142 +734,87 @@ function similarityScore(a, b) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  ARTBOARD SEARCH (indexed cascading matching with cache)
 // ─────────────────────────────────────────────────────────────────────────────
-findArtboardByName = function(doc, name, index, matchCache) {
-    index = index || buildArtboardSearchIndex(doc);
-    lastArtboardMatchInfo = null;
-    
+findArtboardByName = function(doc, name) {
     var target        = normalizeName(name);
     var looseTarget   = looseNameKey(name);
     var compactTarget = compactNameKey(name);
     var targetWords   = nameWords(name);
-    var sigWords      = significantNameWords(name);
-    var sigCompact    = compactWords(sigWords);
-    var targetHadGeneric = sigCompact !== compactTarget;
-    var cacheKey      = '$' + compactTarget;
-    var infoKey       = cacheKey + ':info';
     
-    if (matchCache && matchCache.hasOwnProperty(cacheKey)) {
-        lastArtboardMatchInfo = matchCache[infoKey] || {
-            idx: matchCache[cacheKey], method: 'cache', score: 1, target: name,
-            name: '', secondName: '', secondScore: 0
-        };
-        return matchCache[cacheKey];
-    }
-    function done(idx, info) {
-        lastArtboardMatchInfo = info || {
-            idx: idx, method: idx >= 0 ? 'unknown' : 'miss', score: idx >= 0 ? 1 : 0,
-            target: name, name: '', secondName: '', secondScore: 0
-        };
-        if (matchCache) {
-            matchCache[cacheKey] = idx;
-            matchCache[infoKey] = lastArtboardMatchInfo;
-        }
-        return idx;
+    // ── 1. Exact normalized match ──────────────────────────────────────────
+    for (var i = 0; i < doc.artboards.length; i++) {
+        if (normalizeName(doc.artboards[i].name) === target) return i;
     }
     
-    var hit = indexMapGet(index.byNorm, target);
-    if (hit) return done(hit.idx, {
-        idx: hit.idx, method: 'exact', score: 1, target: name,
-        name: hit.name, secondName: '', secondScore: 0
-    });
-    
-    hit = indexMapGet(index.byLoose, looseTarget);
-    if (hit) return done(hit.idx, {
-        idx: hit.idx, method: 'loose', score: 1, target: name,
-        name: hit.name, secondName: '', secondScore: 0
-    });
-    
-    hit = indexMapGet(index.byCompact, compactTarget);
-    if (hit) return done(hit.idx, {
-        idx: hit.idx, method: 'compact', score: 1, target: name,
-        name: hit.name, secondName: '', secondScore: 0
-    });
-    
-    hit = indexMapGet(index.bySigCompact, sigCompact);
-    if (hit && sigCompact && sigCompact !== compactTarget) {
-        log("GENERIC-MATCH: '" + name + "' -> '" + hit.name + "'");
-        return done(hit.idx, {
-            idx: hit.idx, method: 'generic', score: 0.94, target: name,
-            name: hit.name, secondName: '', secondScore: 0
-        });
+    // ── 2. Loose key match (no quotes/dashes) ──────────────────────────────
+    for (var j = 0; j < doc.artboards.length; j++) {
+        if (looseNameKey(doc.artboards[j].name) === looseTarget) return j;
     }
     
+    // ── 3. Compact key match (no spaces) ───────────────────────────────────
+    for (var k = 0; k < doc.artboards.length; k++) {
+        if (compactNameKey(doc.artboards[k].name) === compactTarget) return k;
+    }
+    
+    // ── 4. Fuzzy matching with multiple strategies ─────────────────────────
     var candidates = [];
-    for (var n = 0; n < index.entries.length; n++) {
-        var entry = index.entries[n];
-        var entryHadGeneric = entry.sigCompact !== entry.compact;
-        var score = 0;
-        var method = '';
+    
+    for (var n = 0; n < doc.artboards.length; n++) {
+        var cname   = doc.artboards[n].name;
+        var ccompact = compactNameKey(cname);
+        var cwords  = nameWords(cname);
+        var score = 0; var method = '';
         
-        if (compactTarget.length >= 5 && entry.compact.indexOf(compactTarget) === 0) {
+        if (compactTarget.length >= 5 && ccompact.indexOf(compactTarget) === 0) {
             score = 0.95; method = 'prefix';
-        } else if (entry.compact.length >= 5 && compactTarget.indexOf(entry.compact) >= 0 && entry.words.length >= 2) {
+        }
+        else if (ccompact.length >= 5 && compactTarget.indexOf(ccompact) >= 0 && cwords.length >= 2) {
             score = 0.93; method = 'contains';
-        } else if (compactTarget.length >= 5 && entry.compact.indexOf(compactTarget) >= 0 && targetWords.length >= 2) {
+        }
+        else if (compactTarget.length >= 5 && ccompact.indexOf(compactTarget) >= 0 && targetWords.length >= 2) {
             score = 0.93; method = 'reverse-contains';
-        } else if ((targetHadGeneric || entryHadGeneric) &&
-                   sigCompact.length >= 5 && entry.sigCompact.length >= 3 &&
-                   sigCompact.indexOf(entry.sigCompact) >= 0) {
-            score = 0.94; method = 'generic-contains';
-        } else if ((targetHadGeneric || entryHadGeneric) &&
-                   sigCompact.length >= 3 && entry.sigCompact.length >= 5 &&
-                   entry.sigCompact.indexOf(sigCompact) >= 0) {
-            score = 0.94; method = 'generic-reverse-contains';
-        } else {
-            var ws1 = wordCoverageScore(targetWords, entry.words);
-            var ws2 = wordCoverageScore(sigWords, entry.sigWords);
-            var es1 = similarityScore(compactTarget, entry.compact);
-            var es2 = similarityScore(sigCompact, entry.sigCompact);
-            var ws = Math.max(ws1, ws2);
-            var es = Math.max(es1, es2);
+        }
+        else {
+            var ws = wordCoverageScore(targetWords, cwords);
+            var es = similarityScore(compactTarget, ccompact);
             score  = Math.max(ws, es);
             method = ws >= es ? 'words' : 'edit';
         }
         
-        if (score > 0) candidates.push({ idx: entry.idx, score: score, method: method, name: entry.name });
+        if (score > 0) candidates.push({ idx: n, score: score, method: method, name: cname });
     }
     
     candidates.sort(function(a, b) { return b.score - a.score; });
     
     if (candidates.length && candidates[0].score >= SETTINGS.FUZZY_THRESHOLD) {
         var best = candidates[0];
-        var second = candidates.length > 1 ? candidates[1] : null;
         log("FUZZY [" + best.method + " " + Math.round(best.score*100) + "%]: '" + 
             name + "' -> '" + best.name + "'");
-        return done(best.idx, {
-            idx: best.idx, method: best.method, score: best.score, target: name,
-            name: best.name,
-            secondName: second ? second.name : '',
-            secondScore: second ? second.score : 0
-        });
+        return best.idx;
     }
     
-    if (sigWords.length >= 2) {
-        for (var m = 0; m < index.entries.length; m++) {
-            var cw = index.entries[m].sigWords;
+    // ── 5. Word-fallback ───────────────────────────────────────────────────
+    if (targetWords.length >= 2) {
+        for (var m = 0; m < doc.artboards.length; m++) {
+            var cw = nameWords(doc.artboards[m].name);
             var matchCount = 0;
-            for (var tw = 0; tw < sigWords.length; tw++) {
-                if (sigWords[tw].length < 3) continue;
+            for (var tw = 0; tw < targetWords.length; tw++) {
+                if (targetWords[tw].length < 3) continue;
                 for (var cwi = 0; cwi < cw.length; cwi++) {
-                    if (cw[cwi].indexOf(sigWords[tw]) >= 0 || 
-                        sigWords[tw].indexOf(cw[cwi]) >= 0) {
+                    if (cw[cwi].indexOf(targetWords[tw]) >= 0 || 
+                        targetWords[tw].indexOf(cw[cwi]) >= 0) {
                         matchCount++;
                         break;
                     }
                 }
             }
             var longWords = 0;
-            for (var lw = 0; lw < sigWords.length; lw++) {
-                if (sigWords[lw].length >= 3) longWords++;
+            for (var lw = 0; lw < targetWords.length; lw++) {
+                if (targetWords[lw].length >= 3) longWords++;
             }
             if (longWords >= 2 && matchCount >= Math.max(2, Math.floor(longWords * 0.6))) {
-                var wf = index.entries[m];
                 log("WORD-FALLBACK [" + matchCount + "/" + longWords + "]: '" + 
-                    name + "' -> '" + wf.name + "'");
-                return done(wf.idx, {
-                    idx: wf.idx, method: 'word-fallback', score: matchCount / longWords,
-                    target: name, name: wf.name, secondName: '', secondScore: 0
-                });
+                    name + "' -> '" + doc.artboards[m].name + "'");
+                return m;
             }
         }
     }
@@ -881,12 +826,7 @@ findArtboardByName = function(doc, name, index, matchCache) {
     }
     log("MISS: '" + name + "'" + (topStr ? " | best: " + topStr : " | no candidates"));
     
-    return done(-1, {
-        idx: -1, method: 'miss', score: topLog.length ? topLog[0].score : 0,
-        target: name, name: topLog.length ? topLog[0].name : '',
-        secondName: topLog.length > 1 ? topLog[1].name : '',
-        secondScore: topLog.length > 1 ? topLog[1].score : 0
-    });
+    return -1;
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1017,7 +957,7 @@ function buildAddressesFromData(data) {
                 var srcEntry = getSourceEntry(item.sourceFile);
                 var srcDoc   = srcEntry.doc;
                 
-                var abIndex = findArtboardByName(srcDoc, item.product, srcEntry.index, srcEntry.matchCache);
+                var abIndex = findArtboardByName(srcDoc, item.product);
                 recordMatchReview(item, lastArtboardMatchInfo);
                 
                 if (abIndex < 0) {
@@ -1251,10 +1191,11 @@ function intersectsBoard(item, rect) {
 function sourceLayerKind(item) {
     var name = '';
     try { name = String(item.layer.name || '').toLowerCase(); } catch(e) {}
-    // Russian layer names: "Магниты", "ЛИНИЯ РЕЗА"
-    // English layer names: "magnet", "cut"
-    if (name.indexOf('magnet') >= 0 || name.indexOf('магнит') >= 0) return 'MAGNET';
-    if (name.indexOf('cut') >= 0 || name.indexOf('рез') >= 0) return 'CUT';
+    // Russian: "Магниты" or "магнит" → MAGNET
+    // Russian: "ЛИНИЯ РЕЗА" or "линия реза" → CUT
+    // English fallback: "magnet" → MAGNET, "cut" → CUT
+    if (name.indexOf('magnet') >= 0 || name.indexOf('\u043c\u0430\u0433\u043d\u0438\u0442') >= 0) return 'MAGNET';
+    if (name.indexOf('cut') >= 0 || name.indexOf('\u043b\u0438\u043d\u0438\u044f \u0440\u0435\u0437\u0430') >= 0) return 'CUT';
     return '';
 }
 function isCircleMarkerPath(item) {
