@@ -35,13 +35,10 @@ var SETTINGS = {
         'C:/BULCH/build/layout-data.json'
     ],
 
-    // The Excel file is selected at every launch and converted before layout.
-    // A dedicated temporary JSON prevents a previous table from being reused.
     XLSX_CONVERTER_RELATIVE:    'build/convert-xlsx-to-layout-json.js',
     CURRENT_DATA_JSON_RELATIVE: 'build/layout-data.current.json',
     NODE_BIN:                   'node',
     
-    // The launcher selects the sheet orientation; direct launch defaults to portrait.
     SHEET_WIDTH_MM:  (typeof $.global.__BEP_SHEET_ORIENTATION !== 'undefined' &&
                       $.global.__BEP_SHEET_ORIENTATION === 'landscape') ? 3000 : 2000,
     SHEET_HEIGHT_MM: (typeof $.global.__BEP_SHEET_ORIENTATION !== 'undefined' &&
@@ -51,7 +48,6 @@ var SETTINGS = {
     ARTBOARD_GAP_MM: 3,
     COLUMN_GAP_MM:   3,
     
-    // Extra space applies only to the address-name header, not between blocks.
     LABEL_HEIGHT_MM: 22,
     LABEL_WIDTH_MM:  100,
     LABEL_FONT_MM:   10,
@@ -86,20 +82,18 @@ var SETTINGS = {
     MATCH_REVIEW_ENABLED:           true,
     MATCH_REVIEW_THRESHOLD:         0.75,
     MATCH_REVIEW_AMBIGUITY_DELTA:   0.08,
-    // Show every non-exact match for approval before any output is created.
     MATCH_REVIEW_NON_EXACT:         true,
     MISS_REVIEW_THRESHOLD:          0.75,
     MATCH_REVIEW_MAX_ITEMS:         80,
     
-    // Fuzzy matching threshold (0.0–1.0). Lowered to 0.75 for better coverage.
     FUZZY_THRESHOLD: 0.75
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  GLOBALS
 // ─────────────────────────────────────────────────────────────────────────────
-var PT = 72 / 25.4;   // mm -> pt
-var MM = 25.4 / 72;   // pt -> mm
+var PT = 72 / 25.4;
+var MM = 25.4 / 72;
 var MARKER_PFX = '__BEP__';
 var OPERATIONAL_PFX = '__BEP_OPERATIONAL__';
 
@@ -242,7 +236,6 @@ function isExactMatchMethod(method) {
 }
 function shouldReviewMatch(info) {
     if (!SETTINGS.MATCH_REVIEW_ENABLED || !info) return false;
-    // Every miss must be shown, even if the suggested alternative is weak.
     if (info.idx < 0) return true;
     if (SETTINGS.MATCH_REVIEW_NON_EXACT && !isExactMatchMethod(info.method)) return true;
     if ((info.score || 0) < SETTINGS.MATCH_REVIEW_THRESHOLD) return true;
@@ -401,7 +394,6 @@ function resolveDataFile() {
     var output = new File(sf.fsName + '/' + SETTINGS.CURRENT_DATA_JSON_RELATIVE);
     if (!converter.exists) throw new Error('Не найден конвертер таблицы: ' + converter.fsName);
 
-    // Do not allow an old conversion to be read when the current conversion fails.
     if (output.exists && !output.remove())
         throw new Error('Не удалось очистить временные данные: ' + output.fsName);
 
@@ -417,7 +409,6 @@ function resolveDataFile() {
     return output;
 }
 
-
 function callExternalCommand(command) {
     try {
         if (typeof system !== 'undefined' && system && typeof system.callSystem === 'function')
@@ -430,8 +421,6 @@ function callExternalCommand(command) {
     throw new Error('Illustrator не может запустить Node.js для чтения Excel.');
 }
 
-// Some Illustrator builds disable system.callSystem/app.system.  In that case
-// launch a hidden WSH helper and wait for its status file before continuing.
 function vbsEscape(value) { return String(value).replace(/"/g, '""'); }
 function writePlainText(file, text) {
     file.encoding = 'UTF-8';
@@ -638,10 +627,10 @@ function nameWords(value) {
 }
 
 function isGenericMatchWord(word) {
-    return word === '\u043f\u0438\u0440\u043e\u0436\u043d\u043e\u0435' || // пирожное
-           word === '\u0442\u043e\u0440\u0442' ||                         // торт
-           word === '\u043c\u0438\u043d\u0438' ||                         // мини
-           word === '\u0432\u043a\u0443\u0441\u044b';                     // вкусы
+    return word === '\u043f\u0438\u0440\u043e\u0436\u043d\u043e\u0435' ||
+           word === '\u0442\u043e\u0440\u0442' ||
+           word === '\u043c\u0438\u043d\u0438' ||
+           word === '\u0432\u043a\u0443\u0441\u044b';
 }
 
 function significantNameWords(value) {
@@ -745,110 +734,8 @@ function similarityScore(a, b) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  ARTBOARD SEARCH (FIXED - cascading matching)
+//  ARTBOARD SEARCH (indexed cascading matching with cache)
 // ─────────────────────────────────────────────────────────────────────────────
-function findArtboardByName(doc, name) {
-    var target        = normalizeName(name);
-    var looseTarget   = looseNameKey(name);
-    var compactTarget = compactNameKey(name);
-    var targetWords   = nameWords(name);
-    
-    // ── 1. Exact normalized match ──────────────────────────────────────────
-    for (var i = 0; i < doc.artboards.length; i++) {
-        if (normalizeName(doc.artboards[i].name) === target) return i;
-    }
-    
-    // ── 2. Loose key match (no quotes/dashes) ──────────────────────────────
-    for (var j = 0; j < doc.artboards.length; j++) {
-        if (looseNameKey(doc.artboards[j].name) === looseTarget) return j;
-    }
-    
-    // ── 3. Compact key match (no spaces) ───────────────────────────────────
-    for (var k = 0; k < doc.artboards.length; k++) {
-        if (compactNameKey(doc.artboards[k].name) === compactTarget) return k;
-    }
-    
-    // ── 4. Fuzzy matching with multiple strategies ─────────────────────────
-    var candidates = [];  // { idx, score, method }
-    
-    for (var n = 0; n < doc.artboards.length; n++) {
-        var cname   = doc.artboards[n].name;
-        var cloose  = looseNameKey(cname);
-        var ccompact = compactNameKey(cname);
-        var cwords  = nameWords(cname);
-        var score = 0; var method = '';
-        
-        // 4a. Prefix match (candidate starts with target, min 5 chars)
-        if (compactTarget.length >= 5 && ccompact.indexOf(compactTarget) === 0) {
-            score = 0.95; method = 'prefix';
-        }
-        // 4b. Contains: target contains candidate (for compound names)
-        else if (ccompact.length >= 5 && compactTarget.indexOf(ccompact) >= 0 && cwords.length >= 2) {
-            score = 0.93; method = 'contains';
-        }
-        // 4c. Reverse-contains: candidate contains target
-        else if (compactTarget.length >= 5 && ccompact.indexOf(compactTarget) >= 0 && targetWords.length >= 2) {
-            score = 0.93; method = 'reverse-contains';
-        }
-        // 4d. Word coverage + edit distance
-        else {
-            var ws = wordCoverageScore(targetWords, cwords);
-            var es = similarityScore(compactTarget, ccompact);
-            score  = Math.max(ws, es);
-            method = ws >= es ? 'words' : 'edit';
-        }
-        
-        if (score > 0) candidates.push({ idx: n, score: score, method: method, name: cname });
-    }
-    
-    // Sort by score descending
-    candidates.sort(function(a, b) { return b.score - a.score; });
-    
-    if (candidates.length && candidates[0].score >= SETTINGS.FUZZY_THRESHOLD) {
-        var best = candidates[0];
-        log("FUZZY [" + best.method + " " + Math.round(best.score*100) + "%]: '" + 
-            name + "' -> '" + best.name + "'");
-        return best.idx;
-    }
-    
-    // ── 5. Word-fallback: match if ≥60% of significant words (len≥3) overlap ─
-    if (targetWords.length >= 2) {
-        for (var m = 0; m < doc.artboards.length; m++) {
-            var cw = nameWords(doc.artboards[m].name);
-            var matchCount = 0;
-            for (var tw = 0; tw < targetWords.length; tw++) {
-                if (targetWords[tw].length < 3) continue;  // skip short words
-                for (var cwi = 0; cwi < cw.length; cwi++) {
-                    if (cw[cwi].indexOf(targetWords[tw]) >= 0 || 
-                        targetWords[tw].indexOf(cw[cwi]) >= 0) {
-                        matchCount++;
-                        break;
-                    }
-                }
-            }
-            var longWords = 0;
-            for (var lw = 0; lw < targetWords.length; lw++) {
-                if (targetWords[lw].length >= 3) longWords++;
-            }
-            if (longWords >= 2 && matchCount >= Math.max(2, Math.floor(longWords * 0.6))) {
-                log("WORD-FALLBACK [" + matchCount + "/" + longWords + "]: '" + 
-                    name + "' -> '" + doc.artboards[m].name + "'");
-                return m;
-            }
-        }
-    }
-    
-    // ── MISS: log top-3 candidates for diagnostics ─────────────────────────
-    var topLog = candidates.length ? candidates.slice(0, 3) : [];
-    var topStr = '';
-    for (var ti = 0; ti < topLog.length; ti++) {
-        topStr += "'" + topLog[ti].name + "' " + Math.round(topLog[ti].score*100) + "% ";
-    }
-    log("MISS: '" + name + "'" + (topStr ? " | best: " + topStr : " | no candidates"));
-    
-    return -1;
-}
-
 findArtboardByName = function(doc, name, index, matchCache) {
     index = index || buildArtboardSearchIndex(doc);
     lastArtboardMatchInfo = null;
@@ -1056,8 +943,6 @@ function copyCountForItem(data, item) {
 }
 
 function labelReserveWidth(label) {
-    // Reserve sufficient space during layout; the rendered frame follows the
-    // exact visible text bounds and is not constrained to this estimate.
     var estimatedMm = String(label || '').length * SETTINGS.LABEL_FONT_MM * 0.55 +
                       SETTINGS.LABEL_FRAME_PAD_MM * 2 +
                       SETTINGS.LABEL_BLOCK_INSET_MM * 2;
@@ -1208,7 +1093,6 @@ function buildLayout(addresses) {
     var abGap  = mm(SETTINGS.ARTBOARD_GAP_MM);
     var colGap = mm(SETTINGS.COLUMN_GAP_MM);
     
-    // Check: no artboard should be larger than sheet
     for (var a0 = 0; a0 < addresses.length; a0++) {
         for (var b0 = 0; b0 < addresses[a0].boards.length; b0++) {
             var brd = addresses[a0].boards[b0];
@@ -1394,7 +1278,6 @@ function restoreOperationalPathNames(changed) {
     for (var i = 0; i < changed.length; i++) try { changed[i].item.name = changed[i].name; } catch(e) {}
 }
 
-
 function copyBoard(srcDoc, board, mName, docState, label) {
     if (tryCopyBoard(srcDoc, board, mName)) return true;
     if (!SETTINGS.CLEAN_ON_COPY_ERROR || docState.cleaned) return false;
@@ -1456,9 +1339,6 @@ function pasteIntoDestDoc(destDoc) {
 function rotateGroup90(destDoc, grp, destL, destT, sourceW, sourceH) {
     var anchor = null;
     try {
-        // The anchor represents the original artboard, not the visible artwork.
-        // It keeps rotated artwork centred in its cell even when the artwork has
-        // transparent/empty margins or extends beyond the artboard bounds.
         anchor = destDoc.pathItems.rectangle(destT, destL, sourceW, sourceH);
         anchor.filled = false;
         anchor.stroked = false;
@@ -1748,8 +1628,6 @@ function drawLabel(destDoc, group, addr, cell, sheetDocTop) {
     } catch(e) {}
     try { tf.textRange.paragraphAttributes.justification = Justification.LEFT; } catch(e2) {}
 
-    // Point text lets the frame follow the actual glyph bounds.  This avoids a
-    // fixed-width label box and gives the requested 2 mm margin on every side.
     tf.position = [cell.sheetX + blockInset + framePad, labelT - blockInset - framePad];
     var bounds = tf.visibleBounds;
     tf.translate(cell.sheetX + blockInset + framePad - bounds[0],
@@ -2044,7 +1922,7 @@ function finalizeSheetContexts(sheetContexts) {
 
 // ─────────────────────────────────────────────────────────────────────────────
 //  COUNTERS
-// ─────────────────────────────────────────────────────────────────────────────
+// ────────────────────────────────────────────────────────────────────────────
 function saveDoc(doc, outFile) {
     var opt = new IllustratorSaveOptions();
     opt.pdfCompatible = SETTINGS.PDF_COMPATIBLE;
@@ -2090,8 +1968,6 @@ function countLayoutOverlaps(sheets) {
     return overlaps;
 }
 
-// A spreadsheet-ready verification table.  It is deliberately tab-separated:
-// Excel opens it directly and Russian addresses do not conflict with commas.
 function verificationText(value) {
     return String(value == null ? '' : value)
         .replace(/[\t\r\n]+/g, ' ')
@@ -2135,7 +2011,7 @@ function writeVerificationTable(outFolder, sheets, addresses) {
     if (!f.open('w')) return;
 
     try {
-        f.write('\uFEFF'); // Preserve Cyrillic when the file is opened directly in Excel.
+        f.write('\uFEFF');
         var W = function(values) {
             var row = [];
             for (var i = 0; i < values.length; i++) row.push(verificationText(values[i]));
@@ -2222,7 +2098,6 @@ function writeReport(outFolder, sheets, addresses) {
     W('  finalize: ' + msText(runStats.timings.finalizeMs));
     W('  save:     ' + msText(runStats.timings.saveMs));
     W('');
-    
     W('Render diagnostics:');
     W('  attempted cells: ' + runStats.renderAttempts);
     W('  paste retry cells: ' + runStats.pasteRetryCells);
@@ -2236,7 +2111,6 @@ function writeReport(outFolder, sheets, addresses) {
     W('  maintenance runs: ' + runStats.maintenanceRuns +
         ' (every ' + SETTINGS.RENDER_MAINTENANCE_EVERY_CELLS + ' cells)');
     W('');
-    
     W('Checks:');
     var expected    = runStats.expectedCopies || runStats.inputRows;
     var matched     = countAddressBoards(addresses);
@@ -2262,7 +2136,6 @@ function writeReport(outFolder, sheets, addresses) {
         (runStats.outputFiles.length === sheets.length ? 'OK' : 'MISMATCH') +
         ' (' + runStats.outputFiles.length + ' vs ' + sheets.length + ')');
     W('');
-    
     W('Address summary (Expected=copies after quantity, Matched=artboard found, Placed=rendered):');
     for (var ao = 0; ao < runStats.tableAddressOrder.length; ao++) {
         var label  = runStats.tableAddressOrder[ao];
@@ -2276,7 +2149,6 @@ function writeReport(outFolder, sheets, addresses) {
             ' renderFailed='  + st.renderFailedRows);
     }
     W('');
-    
     for (var si = 0; si < sheets.length; si++) {
         W('=== Sheet ' + (si+1) + ' — ' + sheets[si].cells.length + 
           ' cells, ' + sheets[si].addrInfos.length + ' addresses ===');
@@ -2288,14 +2160,12 @@ function writeReport(outFolder, sheets, addresses) {
         }
     }
     W('');
-    
     W('Output files:');
     if (runStats.outputFiles.length) {
         for (var ofi = 0; ofi < runStats.outputFiles.length; ofi++)
             W('  ' + runStats.outputFiles[ofi]);
     } else { W('  (none)'); }
     W('');
-    
     if (runStats.rowIssues.length) {
         W('Row issues (' + runStats.rowIssues.length + '):');
         for (var ri = 0; ri < runStats.rowIssues.length; ri++) {
@@ -2308,7 +2178,6 @@ function writeReport(outFolder, sheets, addresses) {
         }
         W('');
     }
-    
     if (runStats.matchReviews.length) {
         W('Match review (' + runStats.matchReviews.length + '):');
         for (var mi = 0; mi < runStats.matchReviews.length; mi++) {
@@ -2323,13 +2192,11 @@ function writeReport(outFolder, sheets, addresses) {
         }
         W('');
     }
-    
     if (errs.length) {
         W('Warnings (' + errs.length + '):');
         for (var e = 0; e < errs.length; e++) W('  ' + errs[e]);
         W('');
     }
-    
     W('Log:');
     for (var l = 0; l < logs.length; l++) W(logs[l]);
     
@@ -2358,12 +2225,10 @@ function main() {
         var sf = scriptFolder();
         outf   = ensureDir(new Folder(sf.fsName + '/' + SETTINGS.OUTPUT_FOLDER_NAME));
         
-        // ── Load data ──────────────────────────────────────────────
         var t0 = nowMs();
         var data = loadTableData();
         runStats.timings.loadMs = nowMs() - t0;
         
-        // ── Scan artboards ────────────────────────────────────────
         t0        = nowMs();
         addresses = buildAddressesFromData(data);
         runStats.timings.scanMs = nowMs() - t0;
@@ -2372,7 +2237,6 @@ function main() {
         totalBoards = countAddressBoards(addresses);
         log('Addresses: ' + addresses.length + ', artboards matched: ' + totalBoards);
         
-        // No layout or output documents are created until this check is approved.
         {
             try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui1) {}
             var reviewOk = showPreflightDialog();
@@ -2380,14 +2244,11 @@ function main() {
             if (!reviewOk) throw new Error('Cancelled before build after preflight check');
         }
         
-        // ── Layout ────────────────────────────────────────────────
         t0     = nowMs();
         sheets = buildLayout(addresses);
         log('Sheets needed: ' + sheets.length);
-        
         runStats.timings.layoutMs = nowMs() - t0;
         
-        // ── Render ───────────────────────────────────────────────
         for (var s = 0; s < sheets.length; s++) {
             if (!sheets[s].cells.length) continue;
             
@@ -2433,12 +2294,9 @@ function main() {
             }
         }
         
-        // ── Finalize (outlines) ───────────────────────────────────
-        // ── Save ─────────────────────────────────────────────────
         writeReport(outf, sheets, addresses);
         writeVerificationTable(outf, sheets, addresses);
         
-        // ── Alert with summary ───────────────────────────────────
         var expected = runStats.expectedCopies || runStats.inputRows;
         var matched  = countAddressBoards(addresses);
         var placed   = countAddressPlaced(addresses);
