@@ -1722,17 +1722,30 @@ function setTechnicalStroke(item, color, widthPt) {
     try { item.filled = false; item.stroked = true; item.strokeColor = color; item.strokeWidth = widthPt; } catch(e) {}
 }
 function routeTaggedOperationalPaths(tech, container) {
-    for (var i = container.pathItems.length - 1; i >= 0; i--) {
-        var p = container.pathItems[i], name = '';
-        try { name = String(p.name || ''); } catch(e) {}
-        if (name.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) {
-            setTechnicalStroke(p, black(), 0.2835);
-            p.move(tech.magnets, ElementPlacement.PLACEATEND);
-        } else if (name.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
-            setTechnicalStroke(p, makeCMYK(100, 0, 0, 0), 0.284);
-            p.move(tech.cutPaths, ElementPlacement.PLACEATEND);
+    function scan(parent) {
+        if (!parent) return;
+        // Process pathItems in this container
+        for (var i = parent.pathItems.length - 1; i >= 0; i--) {
+            var p = parent.pathItems[i], name = '';
+            try { name = String(p.name || ''); } catch(e) {}
+            if (name.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) {
+                setTechnicalStroke(p, black(), 0.2835);
+                p.move(tech.magnets, ElementPlacement.PLACEATEND);
+            } else if (name.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
+                setTechnicalStroke(p, makeCMYK(100, 0, 0, 0), 0.284);
+                p.move(tech.cutPaths, ElementPlacement.PLACEATEND);
+            }
+        }
+        // Recurse into groupItems
+        for (var g = parent.groupItems.length - 1; g >= 0; g--) {
+            try { scan(parent.groupItems[g]); } catch(e) {}
+        }
+        // Recurse into compoundPathItems
+        for (var c = parent.compoundPathItems.length - 1; c >= 0; c--) {
+            try { scan(parent.compoundPathItems[c]); } catch(e) {}
         }
     }
+    scan(container);
 }
 function copyAddressControls(ctx, tech) {
     for (var k = 0; k < ctx.sheetData.addrInfos.length; k++) {
