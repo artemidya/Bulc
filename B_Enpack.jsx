@@ -1257,19 +1257,44 @@ function sourceLayerKind(item) {
 }
 function isCircleMarkerPath(item) {
     try {
-        if (!item.closed || item.filled || item.pathPoints.length !== 4) return false;
-        var b = item.geometricBounds, w = Math.abs(b[2] - b[0]), h = Math.abs(b[1] - b[3]);
-        return w > 0 && h > 0 && Math.abs(w - h) <= Math.max(w, h) * 0.08;
-    } catch(e) { return false; }
+        if (!item.closed || item.filled) return false;
+        if (!item.stroked) return false;
+        
+        var b = item.geometricBounds;
+        var w = Math.abs(b[2] - b[0]);
+        var h = Math.abs(b[1] - b[3]);
+        
+        // Must be roughly 5x5mm (14.17pt) with tolerance
+        var targetSize = 5 * PT; // 5mm in points
+        var tolerance = targetSize * 0.3; // 30% tolerance
+        if (Math.abs(w - targetSize) > tolerance || Math.abs(h - targetSize) > tolerance) return false;
+        
+        // Must be roughly circular (aspect ratio close to 1)
+        var aspectRatio = Math.max(w, h) / Math.min(w, h);
+        if (aspectRatio > 1.2) return false;
+        
+        // Stroke width should be approximately 0.1mm (0.2835pt)
+        var targetStroke = 0.1 * PT; // 0.1mm in points
+        var strokeTolerance = targetStroke * 0.5; // 50% tolerance
+        if (Math.abs(item.strokeWidth - targetStroke) > strokeTolerance) return false;
+        
+        return true;
+    } catch(e) { 
+        return false; 
+    }
 }
 function tagOperationalPaths(srcDoc, board) {
     var changed = [];
+    var stats = { magnet: 0, cut: 0, total: 0 };
     function scan(parent) {
         if (!parent) return;
         for (var i = 0; i < parent.pathItems.length; i++) {
             var item = parent.pathItems[i], kind = sourceLayerKind(item);
             if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
             if (!kind || !intersectsBoard(item, board.rect)) continue;
+            stats.total++;
+            if (kind === 'MAGNET') stats.magnet++;
+            else if (kind === 'CUT') stats.cut++;
             try { changed.push({ item: item, name: item.name }); item.name = OPERATIONAL_PFX + kind + '__' + i; } catch(e) {}
         }
         for (var g = 0; g < parent.groupItems.length; g++) {
@@ -1277,6 +1302,10 @@ function tagOperationalPaths(srcDoc, board) {
         }
     }
     scan(srcDoc);
+    if (stats.total > 0) {
+        log('DIAG tag: row ' + board.rowNumber + ' tagged=' + stats.total + 
+            ' magnet=' + stats.magnet + ' cut=' + stats.cut);
+    }
     return changed;
 }
 function restoreOperationalPathNames(changed) {
@@ -1727,6 +1756,7 @@ function setTechnicalStroke(item, color, widthPt) {
     try { item.filled = false; item.stroked = true; item.strokeColor = color; item.strokeWidth = widthPt; } catch(e) {}
 }
 function routeTaggedOperationalPaths(tech, container) {
+    var stats = { magnet: 0, cut: 0 };
     function scan(parent) {
         if (!parent) return;
         // Collect items to move first, then move them (safe iteration)
@@ -1744,10 +1774,10 @@ function routeTaggedOperationalPaths(tech, container) {
             var entry = toMove[m];
             if (entry.layer === 'magnet') {
                 setTechnicalStroke(entry.item, black(), 0.2835);
-                try { entry.item.move(tech.magnets, ElementPlacement.PLACEATEND); } catch(e) {}
+                try { entry.item.move(tech.magnets, ElementPlacement.PLACEATEND); stats.magnet++; } catch(e) {}
             } else {
                 setTechnicalStroke(entry.item, makeCMYK(100, 0, 0, 0), 0.284);
-                try { entry.item.move(tech.cutPaths, ElementPlacement.PLACEATEND); } catch(e) {}
+                try { entry.item.move(tech.cutPaths, ElementPlacement.PLACEATEND); stats.cut++; } catch(e) {}
             }
         }
         // Recurse into groups
@@ -1756,6 +1786,7 @@ function routeTaggedOperationalPaths(tech, container) {
         }
     }
     scan(container);
+    log('DIAG route: magnet=' + stats.magnet + ' cut=' + stats.cut);
 }
 function copyAddressControls(ctx, tech) {
     function scanGroup(group) {
