@@ -39,8 +39,10 @@ var SETTINGS = {
     CURRENT_DATA_JSON_RELATIVE: 'build/layout-data.current.json',
     NODE_BIN:                   'node',
     
-    SHEET_WIDTH_MM:  2000,
-    SHEET_HEIGHT_MM: 3000,
+    SHEET_WIDTH_MM:  (typeof $.global.__BEP_SHEET_ORIENTATION !== 'undefined' &&
+                      $.global.__BEP_SHEET_ORIENTATION === 'landscape') ? 3000 : 2000,
+    SHEET_HEIGHT_MM: (typeof $.global.__BEP_SHEET_ORIENTATION !== 'undefined' &&
+                      $.global.__BEP_SHEET_ORIENTATION === 'landscape') ? 2000 : 3000,
     SHEET_MARGIN_MM: 0,
     
     ARTBOARD_GAP_MM: 3,
@@ -74,7 +76,7 @@ var SETTINGS = {
     REDRAW_EVERY_N_ADDRESSES: 0,
     RENDER_MAINTENANCE_EVERY_CELLS: 75,
     RENDER_MAINTENANCE_DELAY_MS:    100,
-    RENDER_ART_CACHE:              false,
+    RENDER_ART_CACHE:              true,
     PASTE_RETRY_COUNT:              3,
     PASTE_RETRY_DELAY_MS:           250,
     MATCH_REVIEW_ENABLED:           true,
@@ -734,87 +736,142 @@ function similarityScore(a, b) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  ARTBOARD SEARCH (indexed cascading matching with cache)
 // ─────────────────────────────────────────────────────────────────────────────
-findArtboardByName = function(doc, name) {
+findArtboardByName = function(doc, name, index, matchCache) {
+    index = index || buildArtboardSearchIndex(doc);
+    lastArtboardMatchInfo = null;
+    
     var target        = normalizeName(name);
     var looseTarget   = looseNameKey(name);
     var compactTarget = compactNameKey(name);
     var targetWords   = nameWords(name);
+    var sigWords      = significantNameWords(name);
+    var sigCompact    = compactWords(sigWords);
+    var targetHadGeneric = sigCompact !== compactTarget;
+    var cacheKey      = '$' + compactTarget;
+    var infoKey       = cacheKey + ':info';
     
-    // ── 1. Exact normalized match ──────────────────────────────────────────
-    for (var i = 0; i < doc.artboards.length; i++) {
-        if (normalizeName(doc.artboards[i].name) === target) return i;
+    if (matchCache && matchCache.hasOwnProperty(cacheKey)) {
+        lastArtboardMatchInfo = matchCache[infoKey] || {
+            idx: matchCache[cacheKey], method: 'cache', score: 1, target: name,
+            name: '', secondName: '', secondScore: 0
+        };
+        return matchCache[cacheKey];
+    }
+    function done(idx, info) {
+        lastArtboardMatchInfo = info || {
+            idx: idx, method: idx >= 0 ? 'unknown' : 'miss', score: idx >= 0 ? 1 : 0,
+            target: name, name: '', secondName: '', secondScore: 0
+        };
+        if (matchCache) {
+            matchCache[cacheKey] = idx;
+            matchCache[infoKey] = lastArtboardMatchInfo;
+        }
+        return idx;
     }
     
-    // ── 2. Loose key match (no quotes/dashes) ──────────────────────────────
-    for (var j = 0; j < doc.artboards.length; j++) {
-        if (looseNameKey(doc.artboards[j].name) === looseTarget) return j;
+    var hit = indexMapGet(index.byNorm, target);
+    if (hit) return done(hit.idx, {
+        idx: hit.idx, method: 'exact', score: 1, target: name,
+        name: hit.name, secondName: '', secondScore: 0
+    });
+    
+    hit = indexMapGet(index.byLoose, looseTarget);
+    if (hit) return done(hit.idx, {
+        idx: hit.idx, method: 'loose', score: 1, target: name,
+        name: hit.name, secondName: '', secondScore: 0
+    });
+    
+    hit = indexMapGet(index.byCompact, compactTarget);
+    if (hit) return done(hit.idx, {
+        idx: hit.idx, method: 'compact', score: 1, target: name,
+        name: hit.name, secondName: '', secondScore: 0
+    });
+    
+    hit = indexMapGet(index.bySigCompact, sigCompact);
+    if (hit && sigCompact && sigCompact !== compactTarget) {
+        log("GENERIC-MATCH: '" + name + "' -> '" + hit.name + "'");
+        return done(hit.idx, {
+            idx: hit.idx, method: 'generic', score: 0.94, target: name,
+            name: hit.name, secondName: '', secondScore: 0
+        });
     }
     
-    // ── 3. Compact key match (no spaces) ───────────────────────────────────
-    for (var k = 0; k < doc.artboards.length; k++) {
-        if (compactNameKey(doc.artboards[k].name) === compactTarget) return k;
-    }
-    
-    // ── 4. Fuzzy matching with multiple strategies ─────────────────────────
     var candidates = [];
-    
-    for (var n = 0; n < doc.artboards.length; n++) {
-        var cname   = doc.artboards[n].name;
-        var ccompact = compactNameKey(cname);
-        var cwords  = nameWords(cname);
-        var score = 0; var method = '';
+    for (var n = 0; n < index.entries.length; n++) {
+        var entry = index.entries[n];
+        var entryHadGeneric = entry.sigCompact !== entry.compact;
+        var score = 0;
+        var method = '';
         
-        if (compactTarget.length >= 5 && ccompact.indexOf(compactTarget) === 0) {
+        if (compactTarget.length >= 5 && entry.compact.indexOf(compactTarget) === 0) {
             score = 0.95; method = 'prefix';
-        }
-        else if (ccompact.length >= 5 && compactTarget.indexOf(ccompact) >= 0 && cwords.length >= 2) {
+        } else if (entry.compact.length >= 5 && compactTarget.indexOf(entry.compact) >= 0 && entry.words.length >= 2) {
             score = 0.93; method = 'contains';
-        }
-        else if (compactTarget.length >= 5 && ccompact.indexOf(compactTarget) >= 0 && targetWords.length >= 2) {
+        } else if (compactTarget.length >= 5 && entry.compact.indexOf(compactTarget) >= 0 && targetWords.length >= 2) {
             score = 0.93; method = 'reverse-contains';
-        }
-        else {
-            var ws = wordCoverageScore(targetWords, cwords);
-            var es = similarityScore(compactTarget, ccompact);
+        } else if ((targetHadGeneric || entryHadGeneric) &&
+                   sigCompact.length >= 5 && entry.sigCompact.length >= 3 &&
+                   sigCompact.indexOf(entry.sigCompact) >= 0) {
+            score = 0.94; method = 'generic-contains';
+        } else if ((targetHadGeneric || entryHadGeneric) &&
+                   sigCompact.length >= 3 && entry.sigCompact.length >= 5 &&
+                   entry.sigCompact.indexOf(sigCompact) >= 0) {
+            score = 0.94; method = 'generic-reverse-contains';
+        } else {
+            var ws1 = wordCoverageScore(targetWords, entry.words);
+            var ws2 = wordCoverageScore(sigWords, entry.sigWords);
+            var es1 = similarityScore(compactTarget, entry.compact);
+            var es2 = similarityScore(sigCompact, entry.sigCompact);
+            var ws = Math.max(ws1, ws2);
+            var es = Math.max(es1, es2);
             score  = Math.max(ws, es);
             method = ws >= es ? 'words' : 'edit';
         }
         
-        if (score > 0) candidates.push({ idx: n, score: score, method: method, name: cname });
+        if (score > 0) candidates.push({ idx: entry.idx, score: score, method: method, name: entry.name });
     }
     
     candidates.sort(function(a, b) { return b.score - a.score; });
     
     if (candidates.length && candidates[0].score >= SETTINGS.FUZZY_THRESHOLD) {
         var best = candidates[0];
+        var second = candidates.length > 1 ? candidates[1] : null;
         log("FUZZY [" + best.method + " " + Math.round(best.score*100) + "%]: '" + 
             name + "' -> '" + best.name + "'");
-        return best.idx;
+        return done(best.idx, {
+            idx: best.idx, method: best.method, score: best.score, target: name,
+            name: best.name,
+            secondName: second ? second.name : '',
+            secondScore: second ? second.score : 0
+        });
     }
     
-    // ── 5. Word-fallback ───────────────────────────────────────────────────
-    if (targetWords.length >= 2) {
-        for (var m = 0; m < doc.artboards.length; m++) {
-            var cw = nameWords(doc.artboards[m].name);
+    if (sigWords.length >= 2) {
+        for (var m = 0; m < index.entries.length; m++) {
+            var cw = index.entries[m].sigWords;
             var matchCount = 0;
-            for (var tw = 0; tw < targetWords.length; tw++) {
-                if (targetWords[tw].length < 3) continue;
+            for (var tw = 0; tw < sigWords.length; tw++) {
+                if (sigWords[tw].length < 3) continue;
                 for (var cwi = 0; cwi < cw.length; cwi++) {
-                    if (cw[cwi].indexOf(targetWords[tw]) >= 0 || 
-                        targetWords[tw].indexOf(cw[cwi]) >= 0) {
+                    if (cw[cwi].indexOf(sigWords[tw]) >= 0 || 
+                        sigWords[tw].indexOf(cw[cwi]) >= 0) {
                         matchCount++;
                         break;
                     }
                 }
             }
             var longWords = 0;
-            for (var lw = 0; lw < targetWords.length; lw++) {
-                if (targetWords[lw].length >= 3) longWords++;
+            for (var lw = 0; lw < sigWords.length; lw++) {
+                if (sigWords[lw].length >= 3) longWords++;
             }
             if (longWords >= 2 && matchCount >= Math.max(2, Math.floor(longWords * 0.6))) {
+                var wf = index.entries[m];
                 log("WORD-FALLBACK [" + matchCount + "/" + longWords + "]: '" + 
-                    name + "' -> '" + doc.artboards[m].name + "'");
-                return m;
+                    name + "' -> '" + wf.name + "'");
+                return done(wf.idx, {
+                    idx: wf.idx, method: 'word-fallback', score: matchCount / longWords,
+                    target: name, name: wf.name, secondName: '', secondScore: 0
+                });
             }
         }
     }
@@ -826,7 +883,12 @@ findArtboardByName = function(doc, name) {
     }
     log("MISS: '" + name + "'" + (topStr ? " | best: " + topStr : " | no candidates"));
     
-    return -1;
+    return done(-1, {
+        idx: -1, method: 'miss', score: topLog.length ? topLog[0].score : 0,
+        target: name, name: topLog.length ? topLog[0].name : '',
+        secondName: topLog.length > 1 ? topLog[1].name : '',
+        secondScore: topLog.length > 1 ? topLog[1].score : 0
+    });
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -957,7 +1019,7 @@ function buildAddressesFromData(data) {
                 var srcEntry = getSourceEntry(item.sourceFile);
                 var srcDoc   = srcEntry.doc;
                 
-                var abIndex = findArtboardByName(srcDoc, item.product);
+                var abIndex = findArtboardByName(srcDoc, item.product, srcEntry.index, srcEntry.matchCache);
                 recordMatchReview(item, lastArtboardMatchInfo);
                 
                 if (abIndex < 0) {
@@ -1200,51 +1262,18 @@ function sourceLayerKind(item) {
 }
 function isCircleMarkerPath(item) {
     try {
-        if (!item.closed) return false;
-        if (item.filled) return false;
-        if (!item.stroked) return false;
-        
-        var b = item.geometricBounds;
-        var w = Math.abs(b[2] - b[0]);
-        var h = Math.abs(b[1] - b[3]);
-        
-        // Must be approximately 5x5mm (any shape: circle, rounded rect, curve)
-        var targetSize = 5 * PT; // 5mm in points = ~14.17pt
-        var tolerance = targetSize * 0.4; // 40% tolerance for shape variations
-        if (Math.abs(w - targetSize) > tolerance || Math.abs(h - targetSize) > tolerance) return false;
-        
-        // Stroke width should be approximately 0.1mm (0.2835pt)
-        var targetStroke = 0.1 * PT; // 0.1mm in points
-        var strokeTolerance = targetStroke * 0.6; // 60% tolerance
-        if (Math.abs(item.strokeWidth - targetStroke) > strokeTolerance) return false;
-        
-        return true;
-    } catch(e) { 
-        return false; 
-    }
+        if (!item.closed || item.filled || item.pathPoints.length !== 4) return false;
+        var b = item.geometricBounds, w = Math.abs(b[2] - b[0]), h = Math.abs(b[1] - b[3]);
+        return w > 0 && h > 0 && Math.abs(w - h) <= Math.max(w, h) * 0.08;
+    } catch(e) { return false; }
 }
 function tagOperationalPaths(srcDoc, board) {
     var changed = [];
-    var stats = { magnet: 0, cut: 0, total: 0 };
-    function scan(parent) {
-        if (!parent) return;
-        for (var i = 0; i < parent.pathItems.length; i++) {
-            var item = parent.pathItems[i], kind = sourceLayerKind(item);
-            if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
-            if (!kind || !intersectsBoard(item, board.rect)) continue;
-            stats.total++;
-            if (kind === 'MAGNET') stats.magnet++;
-            else if (kind === 'CUT') stats.cut++;
-            try { changed.push({ item: item, name: item.name }); item.name = OPERATIONAL_PFX + kind + '__' + i; } catch(e) {}
-        }
-        for (var g = 0; g < parent.groupItems.length; g++) {
-            try { scan(parent.groupItems[g]); } catch(e) {}
-        }
-    }
-    scan(srcDoc);
-    if (stats.total > 0) {
-        log('DIAG tag: row ' + board.rowNumber + ' tagged=' + stats.total + 
-            ' magnet=' + stats.magnet + ' cut=' + stats.cut);
+    for (var i = 0; i < srcDoc.pathItems.length; i++) {
+        var item = srcDoc.pathItems[i], kind = sourceLayerKind(item);
+        if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
+        if (!kind || !intersectsBoard(item, board.rect)) continue;
+        try { changed.push({ item: item, name: item.name }); item.name = OPERATIONAL_PFX + kind + '__' + i; } catch(e) {}
     }
     return changed;
 }
@@ -1298,7 +1327,18 @@ function toArr(sel) {
 
 function pasteIntoDestDoc(destDoc) {
     activate(destDoc);
-    try { destDoc.activeLayer = destDoc.layers[0]; } catch(e0) {}
+    // Find artwork layer (bottom layer, name='artwork')
+    // layers.add() puts new layers at index 0 (top), so artwork is at the end
+    var artworkLayer = null;
+    for (var li = destDoc.layers.length - 1; li >= 0; li--) {
+        try { if (destDoc.layers[li].name === 'artwork') { artworkLayer = destDoc.layers[li]; break; } } catch(e) {}
+    }
+    if (artworkLayer) {
+        try { destDoc.activeLayer = artworkLayer; } catch(e0) {}
+    } else {
+        // Fallback: use bottom layer (last in array)
+        try { destDoc.activeLayer = destDoc.layers[destDoc.layers.length - 1]; } catch(e0) {}
+    }
     try { app.executeMenuCommand('deselectall'); } catch(e1) {}
     destDoc.selection = null;
     try { app.executeMenuCommand('pasteInPlace'); } catch(e2) {}
@@ -1377,13 +1417,45 @@ function renderCell(srcDoc, destDoc, cell, parentGroup, sheetDocTop, docState) {
     if (!mk) warn('Marker missing, using artboard rect as fallback: ' + 
                   addr.label + ' row ' + board.rowNumber);
     
+    // Extract operational paths (magnets/cut) from pasted BEFORE creating clip group
+    // This prevents breaking clipping masks when moving paths to technical layers
+    var operationalPaths = [];
+    for (var op = 0; op < pasted.length; op++) {
+        try {
+            var opName = String(pasted[op].name || '');
+            if (opName.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0 || 
+                opName.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
+                operationalPaths.push(pasted[op]);
+            }
+        } catch(e) {}
+    }
+    
     var artGrp = destDoc.groupItems.add();
     artGrp.name = addr.label + '/row' + board.rowNumber + '/' + board.product;
     
     for (var i = 0; i < pasted.length; i++) {
         if (pasted[i] === mk) continue;
+        // Skip operational paths - they go to a separate container
+        var isOperational = false;
+        for (var opj = 0; opj < operationalPaths.length; opj++) {
+            if (pasted[i] === operationalPaths[opj]) { isOperational = true; break; }
+        }
+        if (isOperational) continue;
         try { pasted[i].move(artGrp, ElementPlacement.PLACEATEND); }
         catch(e2) { warn('Move failed: ' + addr.label + ' row ' + board.rowNumber); }
+    }
+    
+    // Move operational paths to pending container (will be routed to tech layers later)
+    if (operationalPaths.length > 0) {
+        var pendingGrp = null;
+        try { pendingGrp = destDoc.groupItems.getByName('__BEP_PENDING_OPERATIONAL__'); } catch(e) {}
+        if (!pendingGrp) {
+            pendingGrp = destDoc.groupItems.add();
+            pendingGrp.name = '__BEP_PENDING_OPERATIONAL__';
+        }
+        for (var opk = 0; opk < operationalPaths.length; opk++) {
+            try { operationalPaths[opk].move(pendingGrp, ElementPlacement.PLACEATEND); } catch(e) {}
+        }
     }
     if (mk) try { mk.remove(); } catch(e3) {}
     artGrp.translate(destL - mkB[0], destT - mkB[1]);
@@ -1472,6 +1544,18 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
     if (!mk) warn('Marker missing, using artboard rect as fallback: ' +
                   label + ' row ' + board.rowNumber);
     
+    // Extract operational paths from pasted (same as in renderCell)
+    var operationalPaths = [];
+    for (var op = 0; op < pasted.length; op++) {
+        try {
+            var opName = String(pasted[op].name || '');
+            if (opName.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0 || 
+                opName.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
+                operationalPaths.push(pasted[op]);
+            }
+        } catch(e) {}
+    }
+    
     var cacheGroup = getSheetArtCacheGroup(ctx);
     var master = destDoc.groupItems.add();
     master.name = '__BEP_CACHE_ART__' + board.idx + '/' + board.product;
@@ -1479,10 +1563,29 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
     
     for (var i = 0; i < pasted.length; i++) {
         if (pasted[i] === mk) continue;
+        // Skip operational paths
+        var isOperational = false;
+        for (var opj = 0; opj < operationalPaths.length; opj++) {
+            if (pasted[i] === operationalPaths[opj]) { isOperational = true; break; }
+        }
+        if (isOperational) continue;
         try { pasted[i].move(master, ElementPlacement.PLACEATEND); }
         catch(e2) { warn('Cache move failed: ' + label + ' row ' + board.rowNumber); }
     }
     if (mk) try { mk.remove(); } catch(e3) {}
+    
+    // Move operational paths to pending container
+    if (operationalPaths.length > 0) {
+        var pendingGrp = null;
+        try { pendingGrp = destDoc.groupItems.getByName('__BEP_PENDING_OPERATIONAL__'); } catch(e) {}
+        if (!pendingGrp) {
+            pendingGrp = destDoc.groupItems.add();
+            pendingGrp.name = '__BEP_PENDING_OPERATIONAL__';
+        }
+        for (var opk = 0; opk < operationalPaths.length; opk++) {
+            try { operationalPaths[opk].move(pendingGrp, ElementPlacement.PLACEATEND); } catch(e) {}
+        }
+    }
     
     try {
         if (!master.pageItems.length) {
@@ -1696,8 +1799,7 @@ function setTechnicalStroke(item, color, widthPt) {
     try { item.filled = false; item.stroked = true; item.strokeColor = color; item.strokeWidth = widthPt; } catch(e) {}
 }
 function routeTaggedOperationalPaths(tech, container) {
-    var stats = { magnet: 0, cut: 0 };
-    function scan(parent) {
+    function scanAndRoute(parent) {
         if (!parent) return;
         // Collect items to move first, then move them (safe iteration)
         var toMove = [];
@@ -1714,19 +1816,28 @@ function routeTaggedOperationalPaths(tech, container) {
             var entry = toMove[m];
             if (entry.layer === 'magnet') {
                 setTechnicalStroke(entry.item, black(), 0.2835);
-                try { entry.item.move(tech.magnets, ElementPlacement.PLACEATEND); stats.magnet++; } catch(e) {}
+                try { entry.item.move(tech.magnets, ElementPlacement.PLACEATEND); } catch(e) {}
             } else {
                 setTechnicalStroke(entry.item, makeCMYK(100, 0, 0, 0), 0.284);
-                try { entry.item.move(tech.cutPaths, ElementPlacement.PLACEATEND); stats.cut++; } catch(e) {}
+                try { entry.item.move(tech.cutPaths, ElementPlacement.PLACEATEND); } catch(e) {}
             }
         }
-        // Recurse into groups
+        // Recurse into groups (but NOT into clip groups that contain artwork)
         for (var g = parent.groupItems.length - 1; g >= 0; g--) {
-            try { scan(parent.groupItems[g]); } catch(e) {}
+            try { 
+                var gName = String(parent.groupItems[g].name || '');
+                // Always scan pending operational group
+                if (gName === '__BEP_PENDING_OPERATIONAL__') {
+                    scanAndRoute(parent.groupItems[g]);
+                    // Remove empty pending group
+                    try {
+                        if (parent.groupItems[g].pageItems.length === 0) parent.groupItems[g].remove();
+                    } catch(e) {}
+                }
+            } catch(e) {}
         }
     }
-    scan(container);
-    log('DIAG route: magnet=' + stats.magnet + ' cut=' + stats.cut);
+    scanAndRoute(container);
 }
 function copyAddressControls(ctx, tech) {
     function scanGroup(group) {
@@ -1738,7 +1849,6 @@ function copyAddressControls(ctx, tech) {
             if (name.indexOf('Outline:') === 0 || name.indexOf('Label frame:') === 0) {
                 var copy = p.duplicate(tech.controls, ElementPlacement.PLACEATEND);
                 var isOutline = name.indexOf('Outline:') === 0;
-                // Use the original color, but standardize thickness
                 var thickness = isOutline ? 2.835 : 1.417;
                 setTechnicalStroke(copy, p.strokeColor, thickness);
             }
