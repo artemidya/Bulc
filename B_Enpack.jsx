@@ -1327,14 +1327,14 @@ function toArr(sel) {
 
 function pasteIntoDestDoc(destDoc) {
     activate(destDoc);
-    // Find artwork layer (bottom layer, name='artwork')
-    // layers.add() puts new layers at index 0 (top), so artwork is at the end
-    var artworkLayer = null;
+    // Find print layer (bottom layer, name='print')
+    // layers.add() puts new layers at index 0 (top), so print is at the end
+    var printLayer = null;
     for (var li = destDoc.layers.length - 1; li >= 0; li--) {
-        try { if (destDoc.layers[li].name === 'artwork') { artworkLayer = destDoc.layers[li]; break; } } catch(e) {}
+        try { if (destDoc.layers[li].name === 'print') { printLayer = destDoc.layers[li]; break; } } catch(e) {}
     }
-    if (artworkLayer) {
-        try { destDoc.activeLayer = artworkLayer; } catch(e0) {}
+    if (printLayer) {
+        try { destDoc.activeLayer = printLayer; } catch(e0) {}
     } else {
         // Fallback: use bottom layer (last in array)
         try { destDoc.activeLayer = destDoc.layers[destDoc.layers.length - 1]; } catch(e0) {}
@@ -1783,8 +1783,8 @@ function drawAddressOutline(destDoc, group, ai, sheetDocTop) {
 //  SHEET RENDER CONTEXT
 // ─────────────────────────────────────────────────────────────────────────────
 function makeTechnicalLayers(doc) {
-    var artwork = doc.layers[0];
-    artwork.name = 'artwork';
+    var print = doc.layers[0];
+    print.name = 'print';
     var cut = doc.layers.add(); cut.name = 'cut';
     var magnet = doc.layers.add(); magnet.name = 'magnet';
     doc.activeLayer = cut;
@@ -1792,8 +1792,8 @@ function makeTechnicalLayers(doc) {
     var controls = doc.groupItems.add(); controls.name = 'Address controls';
     doc.activeLayer = magnet;
     var magnets = doc.groupItems.add(); magnets.name = 'Magnets';
-    doc.activeLayer = artwork;
-    return { artwork: artwork, cutPaths: cutPaths, controls: controls, magnets: magnets };
+    doc.activeLayer = print;
+    return { print: print, cutPaths: cutPaths, controls: controls, magnets: magnets };
 }
 function setTechnicalStroke(item, color, widthPt) {
     try { item.filled = false; item.stroked = true; item.strokeColor = color; item.strokeWidth = widthPt; } catch(e) {}
@@ -1822,7 +1822,7 @@ function routeTaggedOperationalPaths(tech, container) {
                 try { entry.item.move(tech.cutPaths, ElementPlacement.PLACEATEND); } catch(e) {}
             }
         }
-        // Recurse into groups (but NOT into clip groups that contain artwork)
+        // Recurse into groups (but NOT into clip groups that contain print content)
         for (var g = parent.groupItems.length - 1; g >= 0; g--) {
             try { 
                 var gName = String(parent.groupItems[g].name || '');
