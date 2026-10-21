@@ -1257,25 +1257,22 @@ function sourceLayerKind(item) {
 }
 function isCircleMarkerPath(item) {
     try {
-        if (!item.closed || item.filled) return false;
+        if (!item.closed) return false;
+        if (item.filled) return false;
         if (!item.stroked) return false;
         
         var b = item.geometricBounds;
         var w = Math.abs(b[2] - b[0]);
         var h = Math.abs(b[1] - b[3]);
         
-        // Must be roughly 5x5mm (14.17pt) with tolerance
-        var targetSize = 5 * PT; // 5mm in points
-        var tolerance = targetSize * 0.3; // 30% tolerance
+        // Must be approximately 5x5mm (any shape: circle, rounded rect, curve)
+        var targetSize = 5 * PT; // 5mm in points = ~14.17pt
+        var tolerance = targetSize * 0.4; // 40% tolerance for shape variations
         if (Math.abs(w - targetSize) > tolerance || Math.abs(h - targetSize) > tolerance) return false;
-        
-        // Must be roughly circular (aspect ratio close to 1)
-        var aspectRatio = Math.max(w, h) / Math.min(w, h);
-        if (aspectRatio > 1.2) return false;
         
         // Stroke width should be approximately 0.1mm (0.2835pt)
         var targetStroke = 0.1 * PT; // 0.1mm in points
-        var strokeTolerance = targetStroke * 0.5; // 50% tolerance
+        var strokeTolerance = targetStroke * 0.6; // 60% tolerance
         if (Math.abs(item.strokeWidth - targetStroke) > strokeTolerance) return false;
         
         return true;
