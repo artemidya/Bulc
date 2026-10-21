@@ -1251,8 +1251,10 @@ function intersectsBoard(item, rect) {
 function sourceLayerKind(item) {
     var name = '';
     try { name = String(item.layer.name || '').toLowerCase(); } catch(e) {}
-    if (name.indexOf('magnet') >= 0) return 'MAGNET';
-    if (name.indexOf('cut') >= 0) return 'CUT';
+    // Russian layer names: "Магниты", "ЛИНИЯ РЕЗА"
+    // English layer names: "magnet", "cut"
+    if (name.indexOf('magnet') >= 0 || name.indexOf('магнит') >= 0) return 'MAGNET';
+    if (name.indexOf('cut') >= 0 || name.indexOf('рез') >= 0) return 'CUT';
     return '';
 }
 function isCircleMarkerPath(item) {
