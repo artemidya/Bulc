@@ -1752,11 +1752,12 @@ function makeTechnicalLayers(doc) {
     print.name = 'print';
     var cut = doc.layers.add(); cut.name = 'cut';
     var magnet = doc.layers.add(); magnet.name = 'magnet';
-    doc.activeLayer = cut;
-    var cutPaths = doc.groupItems.add(); cutPaths.name = 'Cut paths';
-    var controls = doc.groupItems.add(); controls.name = 'Address controls';
-    doc.activeLayer = magnet;
-    var magnets = doc.groupItems.add(); magnets.name = 'Magnets';
+    
+    // Explicitly create groups ON the layer (not via doc.groupItems)
+    var cutPaths = cut.groupItems.add(); cutPaths.name = 'Cut paths';
+    var controls = cut.groupItems.add(); controls.name = 'Address controls';
+    var magnets = magnet.groupItems.add(); magnets.name = 'Magnets';
+    
     doc.activeLayer = print;
     return { print: print, cutPaths: cutPaths, controls: controls, magnets: magnets };
 }
