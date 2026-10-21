@@ -1729,39 +1729,57 @@ function setTechnicalStroke(item, color, widthPt) {
 function routeTaggedOperationalPaths(tech, container) {
     function scan(parent) {
         if (!parent) return;
-        // Process pathItems in this container
+        // Collect items to move first, then move them (safe iteration)
+        var toMove = [];
         for (var i = parent.pathItems.length - 1; i >= 0; i--) {
             var p = parent.pathItems[i], name = '';
             try { name = String(p.name || ''); } catch(e) {}
             if (name.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) {
-                setTechnicalStroke(p, black(), 0.2835);
-                p.move(tech.magnets, ElementPlacement.PLACEATEND);
+                toMove.push({ item: p, layer: 'magnet' });
             } else if (name.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
-                setTechnicalStroke(p, makeCMYK(100, 0, 0, 0), 0.284);
-                p.move(tech.cutPaths, ElementPlacement.PLACEATEND);
+                toMove.push({ item: p, layer: 'cut' });
             }
         }
-        // Recurse into groupItems
+        for (var m = 0; m < toMove.length; m++) {
+            var entry = toMove[m];
+            if (entry.layer === 'magnet') {
+                setTechnicalStroke(entry.item, black(), 0.2835);
+                try { entry.item.move(tech.magnets, ElementPlacement.PLACEATEND); } catch(e) {}
+            } else {
+                setTechnicalStroke(entry.item, makeCMYK(100, 0, 0, 0), 0.284);
+                try { entry.item.move(tech.cutPaths, ElementPlacement.PLACEATEND); } catch(e) {}
+            }
+        }
+        // Recurse into groups
         for (var g = parent.groupItems.length - 1; g >= 0; g--) {
             try { scan(parent.groupItems[g]); } catch(e) {}
-        }
-        // Recurse into compoundPathItems
-        for (var c = parent.compoundPathItems.length - 1; c >= 0; c--) {
-            try { scan(parent.compoundPathItems[c]); } catch(e) {}
         }
     }
     scan(container);
 }
 function copyAddressControls(ctx, tech) {
+    function scanGroup(group) {
+        if (!group) return;
+        // Check direct pathItems
+        for (var i = 0; i < group.pathItems.length; i++) {
+            var p = group.pathItems[i], name = '';
+            try { name = String(p.name || ''); } catch(e) {}
+            if (name.indexOf('Outline:') === 0 || name.indexOf('Label frame:') === 0) {
+                var copy = p.duplicate(tech.controls, ElementPlacement.PLACEATEND);
+                var isOutline = name.indexOf('Outline:') === 0;
+                // Use the original color, but standardize thickness
+                var thickness = isOutline ? 2.835 : 1.417;
+                setTechnicalStroke(copy, p.strokeColor, thickness);
+            }
+        }
+        // Recurse into subgroups
+        for (var g = 0; g < group.groupItems.length; g++) {
+            try { scanGroup(group.groupItems[g]); } catch(e) {}
+        }
+    }
     for (var k = 0; k < ctx.sheetData.addrInfos.length; k++) {
         var ai = ctx.sheetData.addrInfos[k], group = ctx.addrGroups[ai.addr.label];
-        if (!group) continue;
-        for (var i = 0; i < group.pathItems.length; i++) {
-            var p = group.pathItems[i], name = String(p.name || '');
-            if (name.indexOf('Outline:') !== 0 && name.indexOf('Label frame:') !== 0) continue;
-            var copy = p.duplicate(tech.controls, ElementPlacement.PLACEATEND);
-            setTechnicalStroke(copy, p.strokeColor, name.indexOf('Outline:') === 0 ? 2.835 : 1.417);
-        }
+        if (group) scanGroup(group);
     }
 }
 
