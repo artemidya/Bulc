@@ -1297,6 +1297,16 @@ function tagOperationalPaths(srcDoc, board, excludeItem) {
         } catch(e) {}
     }
     scan(srcDoc);
+    var tagStats = { magnet: 0, cut: 0, total: changed.length };
+    for (var ts = 0; ts < changed.length; ts++) {
+        var tn = String(changed[ts].item.name || '');
+        if (tn.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) tagStats.magnet++;
+        else if (tn.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) tagStats.cut++;
+    }
+    if (tagStats.total > 0) {
+        log('DIAG tag: row ' + board.rowNumber + ' total=' + tagStats.total + 
+            ' magnet=' + tagStats.magnet + ' cut=' + tagStats.cut);
+    }
     return changed;
 }
 function restoreOperationalPathNames(changed) {
@@ -1754,6 +1764,7 @@ function setTechnicalStroke(item, color, widthPt) {
     try { item.filled = false; item.stroked = true; item.strokeColor = color; item.strokeWidth = widthPt; } catch(e) {}
 }
 function routeTaggedOperationalPaths(tech, container) {
+    var stats = { magnet: 0, cut: 0 };
     function scan(parent) {
         if (!parent) return;
         var i, p, name;
@@ -1763,10 +1774,10 @@ function routeTaggedOperationalPaths(tech, container) {
                 try { name = String(p.name || ''); } catch(e) {}
                 if (name.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) {
                     setTechnicalStroke(p, black(), 0.2835);
-                    p.move(tech.magnets, ElementPlacement.PLACEATEND);
+                    try { p.move(tech.magnets, ElementPlacement.PLACEATEND); stats.magnet++; } catch(e) {}
                 } else if (name.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
                     setTechnicalStroke(p, makeCMYK(100, 0, 0, 0), 0.284);
-                    p.move(tech.cutPaths, ElementPlacement.PLACEATEND);
+                    try { p.move(tech.cutPaths, ElementPlacement.PLACEATEND); stats.cut++; } catch(e) {}
                 }
             }
         } catch(e) {}
@@ -1782,8 +1793,10 @@ function routeTaggedOperationalPaths(tech, container) {
         } catch(e) {}
     }
     scan(container);
+    log('DIAG route: magnet=' + stats.magnet + ' cut=' + stats.cut);
 }
 function copyAddressControls(ctx, tech) {
+    var stats = { copied: 0 };
     for (var k = 0; k < ctx.sheetData.addrInfos.length; k++) {
         var ai = ctx.sheetData.addrInfos[k], group = ctx.addrGroups[ai.addr.label];
         if (!group) continue;
@@ -1792,8 +1805,10 @@ function copyAddressControls(ctx, tech) {
             if (name.indexOf('Outline:') !== 0 && name.indexOf('Label frame:') !== 0) continue;
             var copy = p.duplicate(tech.controls, ElementPlacement.PLACEATEND);
             setTechnicalStroke(copy, p.strokeColor, name.indexOf('Outline:') === 0 ? 2.835 : 1.417);
+            stats.copied++;
         }
     }
+    log('DIAG controls: copied=' + stats.copied);
 }
 
 function createSheetDoc() {
