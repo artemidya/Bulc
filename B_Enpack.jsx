@@ -39,10 +39,8 @@ var SETTINGS = {
     CURRENT_DATA_JSON_RELATIVE: 'build/layout-data.current.json',
     NODE_BIN:                   'node',
     
-    SHEET_WIDTH_MM:  (typeof $.global.__BEP_SHEET_ORIENTATION !== 'undefined' &&
-                      $.global.__BEP_SHEET_ORIENTATION === 'landscape') ? 3000 : 2000,
-    SHEET_HEIGHT_MM: (typeof $.global.__BEP_SHEET_ORIENTATION !== 'undefined' &&
-                      $.global.__BEP_SHEET_ORIENTATION === 'landscape') ? 2000 : 3000,
+    SHEET_WIDTH_MM:  3000,
+    SHEET_HEIGHT_MM: 2000,
     SHEET_MARGIN_MM: 0,
     
     ARTBOARD_GAP_MM: 3,
@@ -76,7 +74,7 @@ var SETTINGS = {
     REDRAW_EVERY_N_ADDRESSES: 0,
     RENDER_MAINTENANCE_EVERY_CELLS: 75,
     RENDER_MAINTENANCE_DELAY_MS:    100,
-    RENDER_ART_CACHE:              true,
+    RENDER_ART_CACHE:              false,
     PASTE_RETRY_COUNT:              3,
     PASTE_RETRY_DELAY_MS:           250,
     MATCH_REVIEW_ENABLED:           true,
@@ -409,6 +407,7 @@ function resolveDataFile() {
     return output;
 }
 
+
 function callExternalCommand(command) {
     try {
         if (typeof system !== 'undefined' && system && typeof system.callSystem === 'function')
@@ -522,7 +521,7 @@ function addressColor(addr) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  STRING NORMALIZATION (FIXED)
+//  STRING NORMALIZATION
 // ─────────────────────────────────────────────────────────────────────────────
 
 function isSpaceChar(ch) {
@@ -696,7 +695,7 @@ function buildArtboardSearchIndex(doc) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  FUZZY MATCHING (FIXED)
+//  FUZZY MATCHING
 // ─────────────────────────────────────────────────────────────────────────────
 function wordCoverageScore(targetWords, candidateWords) {
     if (!targetWords.length || !candidateWords.length) return 0;
@@ -734,7 +733,7 @@ function similarityScore(a, b) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  ARTBOARD SEARCH (indexed cascading matching with cache)
+//  ARTBOARD SEARCH
 // ─────────────────────────────────────────────────────────────────────────────
 findArtboardByName = function(doc, name, index, matchCache) {
     index = index || buildArtboardSearchIndex(doc);
@@ -1003,12 +1002,8 @@ function buildAddressesFromData(data) {
             runStats.expectedCopies += copyCount;
             
             if (!item || !item.sourceFile) {
-                var sourceHint = item && item.sourceSuggestion ?
-                    ' Suggested source: ' + item.sourceSuggestion +
-                    ' (' + scorePct(item.sourceSuggestionScore) + '% ' +
-                    (item.sourceSuggestionMethod || '') + ')' : '';
                 for (var ms = 0; ms < copyCount; ms++)
-                    recordIssue('missing-source', item, 'Row skipped: no sourceFile.' + sourceHint);
+                    recordIssue('missing-source', item, 'Row skipped: no sourceFile');
                 warn('No sourceFile: row ' + (item ? item.rowNumber : '?') +
                      (copyCount > 1 ? ' x' + copyCount : ''));
                 continue;
@@ -1059,10 +1054,10 @@ function buildAddressesFromData(data) {
                 
             } catch(rowError) {
                 for (var se = 0; se < copyCount; se++)
-                    recordIssue('scan-error', item, 
+                    recordIssue('scan-error', item,
                         rowError && rowError.message ? rowError.message : String(rowError));
                 warn('SCAN ERROR: row ' + (item ? item.rowNumber : '?') + ' | ' +
-                     (item ? item.product : '') + 
+                     (item ? item.product : '') +
                      (copyCount > 1 ? ' x' + copyCount : '') + ' | ' +
                      (rowError && rowError.message ? rowError.message : rowError));
             }
@@ -1097,12 +1092,12 @@ function buildLayout(addresses) {
         for (var b0 = 0; b0 < addresses[a0].boards.length; b0++) {
             var brd = addresses[a0].boards[b0];
             var neededW = Math.max(brd.w, labelReserveWidth(addresses[a0].label));
-            if (neededW > sheetW + 0.01)
-                throw new Error('Board wider than sheet: ' + addresses[a0].label + ' row ' + brd.rowNumber +
-                    ' (' + r1(neededW) + ' > ' + r1(sheetW) + ' mm)');
-            if (brd.h + labelH > sheetH + 0.01)
-                throw new Error('Board taller than sheet: ' + addresses[a0].label + ' row ' + brd.rowNumber +
-                    ' (' + r1(brd.h) + '+' + r1(labelH) + ' > ' + r1(sheetH) + ' mm)');
+            if (neededW > sheetW + 0.01) {
+                warn('Board wider than sheet: ' + addresses[a0].label + ' row ' + brd.rowNumber);
+            }
+            if (brd.h + labelH > sheetH + 0.01) {
+                warn('Board taller than sheet: ' + addresses[a0].label + ' row ' + brd.rowNumber);
+            }
         }
     }
     
@@ -1239,7 +1234,8 @@ function tryCopyBoard(srcDoc, board, mName) {
         srcDoc.selection = null;
         return false;
     }
-    var operationalNames = tagOperationalPaths(srcDoc, board);
+    var operationalNames = tagOperationalPaths(srcDoc, board, mk);
+    mk.name = mName;
     app.executeMenuCommand('copy');
     restoreOperationalPathNames(operationalNames);
     try { mk.remove(); } catch(e3) {}
@@ -1253,33 +1249,60 @@ function intersectsBoard(item, rect) {
 function sourceLayerKind(item) {
     var name = '';
     try { name = String(item.layer.name || '').toLowerCase(); } catch(e) {}
-    // Russian: "Магниты" or "магнит" → MAGNET
-    // Russian: "ЛИНИЯ РЕЗА" or "линия реза" → CUT
-    // English fallback: "magnet" → MAGNET, "cut" → CUT
     if (name.indexOf('magnet') >= 0 || name.indexOf('\u043c\u0430\u0433\u043d\u0438\u0442') >= 0) return 'MAGNET';
-    if (name.indexOf('cut') >= 0 || name.indexOf('\u043b\u0438\u043d\u0438\u044f \u0440\u0435\u0437\u0430') >= 0) return 'CUT';
+    if (name.indexOf('cut') >= 0 || name.indexOf('\u0440\u0435\u0437') >= 0 || name.indexOf('cutting') >= 0) return 'CUT';
     return '';
 }
 function isCircleMarkerPath(item) {
     try {
-        if (!item.closed || item.filled || item.pathPoints.length !== 4) return false;
-        var b = item.geometricBounds, w = Math.abs(b[2] - b[0]), h = Math.abs(b[1] - b[3]);
-        return w > 0 && h > 0 && Math.abs(w - h) <= Math.max(w, h) * 0.08;
-    } catch(e) { return false; }
-}
-function tagOperationalPaths(srcDoc, board) {
-    var changed = [];
-    for (var i = 0; i < srcDoc.pathItems.length; i++) {
-        var item = srcDoc.pathItems[i], kind = sourceLayerKind(item);
-        if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
-        if (!kind || !intersectsBoard(item, board.rect)) continue;
-        try { changed.push({ item: item, name: item.name }); item.name = OPERATIONAL_PFX + kind + '__' + i; } catch(e) {}
+        if (!item.closed || item.filled) return false;
+        var pointCount = item.pathPoints.length;
+        if (pointCount < 3 || pointCount > 8) return false;
+        var b = item.geometricBounds;
+        var w = Math.abs(b[2] - b[0]);
+        var h = Math.abs(b[1] - b[3]);
+        if (w < 0.1 || h < 0.1) return false;
+        var aspectRatio = Math.max(w, h) / Math.min(w, h);
+        if (aspectRatio > 1.3) return false;
+        if (!item.stroked) return false;
+        return true;
+    } catch(e) { 
+        return false; 
     }
+}
+function tagOperationalPaths(srcDoc, board, excludeItem) {
+    var changed = [];
+    function scan(container) {
+        if (!container) return;
+        var i, item, kind;
+        try {
+            for (i = 0; i < container.pathItems.length; i++) {
+                item = container.pathItems[i];
+                if (item === excludeItem) continue;
+                kind = sourceLayerKind(item);
+                if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
+                if (!kind || !intersectsBoard(item, board.rect)) continue;
+                try { changed.push({ item: item, name: item.name }); item.name = OPERATIONAL_PFX + kind + '__' + i; } catch(e) {}
+            }
+        } catch(e) {}
+        try {
+            for (i = 0; i < container.groupItems.length; i++) {
+                scan(container.groupItems[i]);
+            }
+        } catch(e) {}
+        try {
+            for (i = 0; i < container.compoundPathItems.length; i++) {
+                scan(container.compoundPathItems[i]);
+            }
+        } catch(e) {}
+    }
+    scan(srcDoc);
     return changed;
 }
 function restoreOperationalPathNames(changed) {
     for (var i = 0; i < changed.length; i++) try { changed[i].item.name = changed[i].name; } catch(e) {}
 }
+
 
 function copyBoard(srcDoc, board, mName, docState, label) {
     if (tryCopyBoard(srcDoc, board, mName)) return true;
@@ -1327,8 +1350,7 @@ function toArr(sel) {
 
 function pasteIntoDestDoc(destDoc) {
     activate(destDoc);
-    // Find print layer (bottom layer, name='print')
-    // layers.add() puts new layers at index 0 (top), so print is at the end
+    // Find 'print' layer (bottom layer) — layers.add() puts new layers at index 0
     var printLayer = null;
     for (var li = destDoc.layers.length - 1; li >= 0; li--) {
         try { if (destDoc.layers[li].name === 'print') { printLayer = destDoc.layers[li]; break; } } catch(e) {}
@@ -1336,8 +1358,7 @@ function pasteIntoDestDoc(destDoc) {
     if (printLayer) {
         try { destDoc.activeLayer = printLayer; } catch(e0) {}
     } else {
-        // Fallback: use bottom layer (last in array)
-        try { destDoc.activeLayer = destDoc.layers[destDoc.layers.length - 1]; } catch(e0) {}
+        try { destDoc.activeLayer = destDoc.layers[0]; } catch(e0) {}
     }
     try { app.executeMenuCommand('deselectall'); } catch(e1) {}
     destDoc.selection = null;
@@ -1350,18 +1371,12 @@ function pasteIntoDestDoc(destDoc) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  RENDER CELL
 // ─────────────────────────────────────────────────────────────────────────────
-function rotateGroup90(destDoc, grp, destL, destT, sourceW, sourceH) {
-    var anchor = null;
+function rotateGroup90(grp, destL, destT) {
     try {
-        anchor = destDoc.pathItems.rectangle(destT, destL, sourceW, sourceH);
-        anchor.filled = false;
-        anchor.stroked = false;
-        anchor.move(grp, ElementPlacement.PLACEATEND);
         grp.rotate(-90, true, true, true, true, Transformation.CENTER);
-        var anchorBounds = anchor.geometricBounds;
-        grp.translate(destL - anchorBounds[0], destT - anchorBounds[1]);
+        var gb = grp.geometricBounds;
+        grp.translate(destL - gb[0], destT - gb[1]);
     } catch(e) { warn('Rotate failed: ' + e.message); }
-    finally { try { if (anchor) anchor.remove(); } catch(e2) {} }
 }
 
 function renderCell(srcDoc, destDoc, cell, parentGroup, sheetDocTop, docState) {
@@ -1417,49 +1432,17 @@ function renderCell(srcDoc, destDoc, cell, parentGroup, sheetDocTop, docState) {
     if (!mk) warn('Marker missing, using artboard rect as fallback: ' + 
                   addr.label + ' row ' + board.rowNumber);
     
-    // Extract operational paths (magnets/cut) from pasted BEFORE creating clip group
-    // This prevents breaking clipping masks when moving paths to technical layers
-    var operationalPaths = [];
-    for (var op = 0; op < pasted.length; op++) {
-        try {
-            var opName = String(pasted[op].name || '');
-            if (opName.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0 || 
-                opName.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
-                operationalPaths.push(pasted[op]);
-            }
-        } catch(e) {}
-    }
-    
     var artGrp = destDoc.groupItems.add();
     artGrp.name = addr.label + '/row' + board.rowNumber + '/' + board.product;
     
     for (var i = 0; i < pasted.length; i++) {
         if (pasted[i] === mk) continue;
-        // Skip operational paths - they go to a separate container
-        var isOperational = false;
-        for (var opj = 0; opj < operationalPaths.length; opj++) {
-            if (pasted[i] === operationalPaths[opj]) { isOperational = true; break; }
-        }
-        if (isOperational) continue;
         try { pasted[i].move(artGrp, ElementPlacement.PLACEATEND); }
         catch(e2) { warn('Move failed: ' + addr.label + ' row ' + board.rowNumber); }
     }
-    
-    // Move operational paths to pending container (will be routed to tech layers later)
-    if (operationalPaths.length > 0) {
-        var pendingGrp = null;
-        try { pendingGrp = destDoc.groupItems.getByName('__BEP_PENDING_OPERATIONAL__'); } catch(e) {}
-        if (!pendingGrp) {
-            pendingGrp = destDoc.groupItems.add();
-            pendingGrp.name = '__BEP_PENDING_OPERATIONAL__';
-        }
-        for (var opk = 0; opk < operationalPaths.length; opk++) {
-            try { operationalPaths[opk].move(pendingGrp, ElementPlacement.PLACEATEND); } catch(e) {}
-        }
-    }
     if (mk) try { mk.remove(); } catch(e3) {}
     artGrp.translate(destL - mkB[0], destT - mkB[1]);
-    if (board.rotated90) rotateGroup90(destDoc, artGrp, destL, destT, board.origW, board.origH);
+    if (board.rotated90) rotateGroup90(artGrp, destL, destT);
     
     if (SETTINGS.CLIP_TO_ARTBOARD) {
         var cg = destDoc.groupItems.add();
@@ -1544,18 +1527,6 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
     if (!mk) warn('Marker missing, using artboard rect as fallback: ' +
                   label + ' row ' + board.rowNumber);
     
-    // Extract operational paths from pasted (same as in renderCell)
-    var operationalPaths = [];
-    for (var op = 0; op < pasted.length; op++) {
-        try {
-            var opName = String(pasted[op].name || '');
-            if (opName.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0 || 
-                opName.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
-                operationalPaths.push(pasted[op]);
-            }
-        } catch(e) {}
-    }
-    
     var cacheGroup = getSheetArtCacheGroup(ctx);
     var master = destDoc.groupItems.add();
     master.name = '__BEP_CACHE_ART__' + board.idx + '/' + board.product;
@@ -1563,29 +1534,10 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
     
     for (var i = 0; i < pasted.length; i++) {
         if (pasted[i] === mk) continue;
-        // Skip operational paths
-        var isOperational = false;
-        for (var opj = 0; opj < operationalPaths.length; opj++) {
-            if (pasted[i] === operationalPaths[opj]) { isOperational = true; break; }
-        }
-        if (isOperational) continue;
         try { pasted[i].move(master, ElementPlacement.PLACEATEND); }
         catch(e2) { warn('Cache move failed: ' + label + ' row ' + board.rowNumber); }
     }
     if (mk) try { mk.remove(); } catch(e3) {}
-    
-    // Move operational paths to pending container
-    if (operationalPaths.length > 0) {
-        var pendingGrp = null;
-        try { pendingGrp = destDoc.groupItems.getByName('__BEP_PENDING_OPERATIONAL__'); } catch(e) {}
-        if (!pendingGrp) {
-            pendingGrp = destDoc.groupItems.add();
-            pendingGrp.name = '__BEP_PENDING_OPERATIONAL__';
-        }
-        for (var opk = 0; opk < operationalPaths.length; opk++) {
-            try { operationalPaths[opk].move(pendingGrp, ElementPlacement.PLACEATEND); } catch(e) {}
-        }
-    }
     
     try {
         if (!master.pageItems.length) {
@@ -1599,6 +1551,7 @@ function createCachedArtMaster(ctx, srcDoc, board, docState, label) {
 }
 
 function getCachedArtEntry(ctx, cell, cache) {
+    if (!cell || !cell.board) return null;
     var board = cell.board;
     var key = artCacheKey(board);
     if (ctx.artCache.hasOwnProperty(key)) {
@@ -1627,7 +1580,7 @@ function placeCachedArtGroup(ctx, entry, cell, parentGroup) {
         artGrp = entry.group.duplicate(parentGroup, ElementPlacement.PLACEATEND);
         artGrp.name = cell.addr.label + '/row' + board.rowNumber + '/' + board.product;
         artGrp.translate(destL - entry.anchor[0], destT - entry.anchor[1]);
-        if (board.rotated90) rotateGroup90(destDoc, artGrp, destL, destT, board.origW, board.origH);
+        if (board.rotated90) rotateGroup90(artGrp, destL, destT);
         
         if (SETTINGS.CLIP_TO_ARTBOARD) {
             clipGrp = destDoc.groupItems.add();
@@ -1655,7 +1608,7 @@ function placeCachedArtGroup(ctx, entry, cell, parentGroup) {
 }
 
 function renderCellFromArtCache(ctx, cell, cache, parentGroup) {
-    if (!SETTINGS.RENDER_ART_CACHE) return false;
+    if (!SETTINGS.RENDER_ART_CACHE || !ctx || !cell || !cache) return false;
     var entry = getCachedArtEntry(ctx, cell, cache);
     if (!entry) return false;
     if (!placeCachedArtGroup(ctx, entry, cell, parentGroup)) return false;
@@ -1688,7 +1641,8 @@ function getLabelFont() {
 }
 
 function drawLabel(destDoc, group, addr, cell, sheetDocTop) {
-    if (cell.labelY < 0) return;
+    if (!cell || cell.labelY < 0) return;
+    if (!addr || !addr.label) return;
     var framePad = mm(SETTINGS.LABEL_FRAME_PAD_MM);
     var blockInset = mm(SETTINGS.LABEL_BLOCK_INSET_MM);
     var labelT = sheetDocTop - cell.labelY;
@@ -1707,6 +1661,7 @@ function drawLabel(destDoc, group, addr, cell, sheetDocTop) {
 
     tf.position = [cell.sheetX + blockInset + framePad, labelT - blockInset - framePad];
     var bounds = tf.visibleBounds;
+    if (!bounds) { try { tf.remove(); } catch(e4) {} return; }
     tf.translate(cell.sheetX + blockInset + framePad - bounds[0],
                  labelT - blockInset - framePad - bounds[1]);
     bounds = tf.visibleBounds;
@@ -1799,68 +1754,45 @@ function setTechnicalStroke(item, color, widthPt) {
     try { item.filled = false; item.stroked = true; item.strokeColor = color; item.strokeWidth = widthPt; } catch(e) {}
 }
 function routeTaggedOperationalPaths(tech, container) {
-    function scanAndRoute(parent) {
+    function scan(parent) {
         if (!parent) return;
-        // Collect items to move first, then move them (safe iteration)
-        var toMove = [];
-        for (var i = parent.pathItems.length - 1; i >= 0; i--) {
-            var p = parent.pathItems[i], name = '';
-            try { name = String(p.name || ''); } catch(e) {}
-            if (name.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) {
-                toMove.push({ item: p, layer: 'magnet' });
-            } else if (name.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
-                toMove.push({ item: p, layer: 'cut' });
-            }
-        }
-        for (var m = 0; m < toMove.length; m++) {
-            var entry = toMove[m];
-            if (entry.layer === 'magnet') {
-                setTechnicalStroke(entry.item, black(), 0.2835);
-                try { entry.item.move(tech.magnets, ElementPlacement.PLACEATEND); } catch(e) {}
-            } else {
-                setTechnicalStroke(entry.item, makeCMYK(100, 0, 0, 0), 0.284);
-                try { entry.item.move(tech.cutPaths, ElementPlacement.PLACEATEND); } catch(e) {}
-            }
-        }
-        // Recurse into groups (but NOT into clip groups that contain print content)
-        for (var g = parent.groupItems.length - 1; g >= 0; g--) {
-            try { 
-                var gName = String(parent.groupItems[g].name || '');
-                // Always scan pending operational group
-                if (gName === '__BEP_PENDING_OPERATIONAL__') {
-                    scanAndRoute(parent.groupItems[g]);
-                    // Remove empty pending group
-                    try {
-                        if (parent.groupItems[g].pageItems.length === 0) parent.groupItems[g].remove();
-                    } catch(e) {}
+        var i, p, name;
+        try {
+            for (i = parent.pathItems.length - 1; i >= 0; i--) {
+                p = parent.pathItems[i]; name = '';
+                try { name = String(p.name || ''); } catch(e) {}
+                if (name.indexOf(OPERATIONAL_PFX + 'MAGNET__') === 0) {
+                    setTechnicalStroke(p, black(), 0.2835);
+                    p.move(tech.magnets, ElementPlacement.PLACEATEND);
+                } else if (name.indexOf(OPERATIONAL_PFX + 'CUT__') === 0) {
+                    setTechnicalStroke(p, makeCMYK(100, 0, 0, 0), 0.284);
+                    p.move(tech.cutPaths, ElementPlacement.PLACEATEND);
                 }
-            } catch(e) {}
-        }
+            }
+        } catch(e) {}
+        try {
+            for (i = parent.groupItems.length - 1; i >= 0; i--) {
+                scan(parent.groupItems[i]);
+            }
+        } catch(e) {}
+        try {
+            for (i = parent.compoundPathItems.length - 1; i >= 0; i--) {
+                scan(parent.compoundPathItems[i]);
+            }
+        } catch(e) {}
     }
-    scanAndRoute(container);
+    scan(container);
 }
 function copyAddressControls(ctx, tech) {
-    function scanGroup(group) {
-        if (!group) return;
-        // Check direct pathItems
-        for (var i = 0; i < group.pathItems.length; i++) {
-            var p = group.pathItems[i], name = '';
-            try { name = String(p.name || ''); } catch(e) {}
-            if (name.indexOf('Outline:') === 0 || name.indexOf('Label frame:') === 0) {
-                var copy = p.duplicate(tech.controls, ElementPlacement.PLACEATEND);
-                var isOutline = name.indexOf('Outline:') === 0;
-                var thickness = isOutline ? 2.835 : 1.417;
-                setTechnicalStroke(copy, p.strokeColor, thickness);
-            }
-        }
-        // Recurse into subgroups
-        for (var g = 0; g < group.groupItems.length; g++) {
-            try { scanGroup(group.groupItems[g]); } catch(e) {}
-        }
-    }
     for (var k = 0; k < ctx.sheetData.addrInfos.length; k++) {
         var ai = ctx.sheetData.addrInfos[k], group = ctx.addrGroups[ai.addr.label];
-        if (group) scanGroup(group);
+        if (!group) continue;
+        for (var i = 0; i < group.pathItems.length; i++) {
+            var p = group.pathItems[i], name = String(p.name || '');
+            if (name.indexOf('Outline:') !== 0 && name.indexOf('Label frame:') !== 0) continue;
+            var copy = p.duplicate(tech.controls, ElementPlacement.PLACEATEND);
+            setTechnicalStroke(copy, p.strokeColor, name.indexOf('Outline:') === 0 ? 2.835 : 1.417);
+        }
     }
 }
 
@@ -1869,6 +1801,7 @@ function createSheetDoc() {
         DocumentColorSpace.CMYK,
         mm(SETTINGS.SHEET_WIDTH_MM),
         mm(SETTINGS.SHEET_HEIGHT_MM));
+    if (!doc) throw new Error('Failed to create sheet document.');
     setMM(doc);
     try { app.coordinateSystem = CoordinateSystem.DOCUMENTCOORDINATESYSTEM; } catch(e) {}
     doc.artboards[0].artboardRect = [
@@ -1887,30 +1820,13 @@ function createSheetRenderContext(sheetData) {
     };
 }
 function ensureAddressGroup(ctx, addr) {
+    if (!ctx || !ctx.addrGroups || !addr || !addr.label) return null;
     if (!ctx.addrGroups[addr.label]) {
         var grp  = ctx.doc.groupItems.add();
         grp.name = 'Addr:' + addr.label;
         ctx.addrGroups[addr.label] = grp;
     }
     return ctx.addrGroups[addr.label];
-}
-function buildAddressPlacements(sheetContexts) {
-    var map = {};
-    for (var s = 0; s < sheetContexts.length; s++) {
-        var cells = sheetContexts[s].sheetData.cells;
-        for (var i = 0; i < cells.length; i++) {
-            var label = cells[i].addr.label;
-            if (!map[label]) map[label] = [];
-            var buckets = map[label];
-            var last    = buckets.length ? buckets[buckets.length-1] : null;
-            if (!last || last.ctx !== sheetContexts[s]) {
-                last = { ctx: sheetContexts[s], cells: [] };
-                buckets.push(last);
-            }
-            last.cells.push(cells[i]);
-        }
-    }
-    return map;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -1963,7 +1879,7 @@ function afterRenderAttemptMaintenance() {
 function renderOneCell(ctx, cell, cache) {
     var addr  = cell.addr;
     var group = ensureAddressGroup(ctx, addr);
-    drawLabel(ctx.doc, group, addr, cell, ctx.sheetDocTop);
+    if (group) drawLabel(ctx.doc, group, addr, cell, ctx.sheetDocTop);
     
     var rendered = false;
     if (SETTINGS.RENDER_ART_CACHE) {
@@ -1973,7 +1889,7 @@ function renderOneCell(ctx, cell, cache) {
     
     if (!rendered) {
         var src = getRenderSourceDoc(cache, cell.board);
-        rendered = renderCell(src.doc, ctx.doc, cell, group, ctx.sheetDocTop, src.state);
+        rendered = group ? renderCell(src.doc, ctx.doc, cell, group, ctx.sheetDocTop, src.state) : false;
     }
     
     if (rendered) {
@@ -1984,21 +1900,6 @@ function renderOneCell(ctx, cell, cache) {
     }
     afterRenderAttemptMaintenance();
 }
-function renderAddressAcrossSheets(addr, placements, cache) {
-    if (!placements.length) return;
-    var startMs = nowMs();
-    try {
-        for (var p = 0; p < placements.length; p++) {
-            var ctx   = placements[p].ctx;
-            var cells = placements[p].cells;
-            for (var j = 0; j < cells.length; j++) {
-                renderOneCell(ctx, cells[j], cache);
-            }
-        }
-    } finally {
-        if (addr.stats) addr.stats.renderMs += (nowMs() - startMs);
-    }
-}
 
 function renderSheetContext(ctx, cache, sheetIndex, sheetCount) {
     var cells     = ctx.sheetData.cells;
@@ -2007,14 +1908,22 @@ function renderSheetContext(ctx, cache, sheetIndex, sheetCount) {
     var addr      = null;
     
     for (var i = 0; i < cells.length; i++) {
-        if (!addr || addr.label !== cells[i].addr.label) {
+        var cell = cells[i];
+        if (!cell || !cell.addr) continue;
+        if (!addr || addr.label !== cell.addr.label) {
             if (addr && addr.stats) addr.stats.renderMs += (nowMs() - addrStart);
-            addr      = cells[i].addr;
+            addr      = cell.addr;
             addrStart = nowMs();
             lastLabel = addr.label;
             log('Render sheet ' + sheetIndex + '/' + sheetCount + ': ' + lastLabel);
         }
-        renderOneCell(ctx, cells[i], cache);
+        try {
+            renderOneCell(ctx, cell, cache);
+        } catch(cellError) {
+            warn('Cell render error: row ' + (cell.board ? cell.board.rowNumber : '?') +
+                 ' | ' + (cellError && cellError.message ? cellError.message : cellError));
+            recordRenderFailureForCell(cell.addr, cell);
+        }
     }
     if (addr && addr.stats) addr.stats.renderMs += (nowMs() - addrStart);
 }
@@ -2031,19 +1940,14 @@ function finalizeSheetContext(ctx) {
     safeGC();
 }
 
-function finalizeSheetContexts(sheetContexts) {
-    for (var s = 0; s < sheetContexts.length; s++) {
-        finalizeSheetContext(sheetContexts[s]);
-    }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 //  COUNTERS
-// ────────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
 function saveDoc(doc, outFile) {
     var opt = new IllustratorSaveOptions();
     opt.pdfCompatible = SETTINGS.PDF_COMPATIBLE;
     opt.compressed    = SETTINGS.COMPRESSED_SAVE;
+    try { if (outFile.exists) outFile.remove(); } catch(e) {}
     doc.saveAs(outFile, opt);
 }
 function countSheetCells(sheets) {
@@ -2225,56 +2129,19 @@ function writeReport(outFolder, sheets, addresses) {
     W('  art cache hits: ' + runStats.artCacheHits);
     W('  art cache fallbacks: ' + runStats.artCacheFallbacks);
     W('  art cache duplicate failures: ' + runStats.artCacheDupFails);
-    W('  maintenance runs: ' + runStats.maintenanceRuns +
-        ' (every ' + SETTINGS.RENDER_MAINTENANCE_EVERY_CELLS + ' cells)');
+    W('  maintenance runs: ' + runStats.maintenanceRuns);
     W('');
-    W('Checks:');
-    var expected    = runStats.expectedCopies || runStats.inputRows;
-    var matched     = countAddressBoards(addresses);
-    var placed      = countAddressPlaced(addresses);
-    var scanMissing = countIssuesByKind('missing-source') + 
-                      countIssuesByKind('missing-artboard') + 
-                      countIssuesByKind('scan-error');
-    var cellCount   = countSheetCells(sheets);
-    var overlaps    = countLayoutOverlaps(sheets);
-    
-    W('  expected copies == matched + missing: ' + 
-        (expected === matched + scanMissing ? 'OK' : 'MISMATCH') +
-        ' (' + expected + ' vs ' + matched + ' + ' + scanMissing + ')');
-    W('  matched == layout cells: ' + 
-        (matched === cellCount ? 'OK' : 'MISMATCH') +
-        ' (' + matched + ' vs ' + cellCount + ')');
-    W('  layout cells == placed: ' + 
-        (cellCount === placed ? 'OK' : 'MISMATCH') +
-        ' (' + cellCount + ' vs ' + placed + ')');
-    W('  layout overlaps: ' + (overlaps === 0 ? 'OK' : 'MISMATCH') + 
-        ' (' + overlaps + ')');
-    W('  output files == sheets: ' + 
-        (runStats.outputFiles.length === sheets.length ? 'OK' : 'MISMATCH') +
-        ' (' + runStats.outputFiles.length + ' vs ' + sheets.length + ')');
-    W('');
-    W('Address summary (Expected=copies after quantity, Matched=artboard found, Placed=rendered):');
+    W('Address summary:');
     for (var ao = 0; ao < runStats.tableAddressOrder.length; ao++) {
         var label  = runStats.tableAddressOrder[ao];
         var st     = runStats.tableByAddress[label];
         var status = (st.expectedRows === st.placedRows) ? 'OK' : 'CHECK';
         W('  [' + status + '] ' + label + 
-            ' | expected='    + st.expectedRows + 
-            ' matched='       + st.matchedRows  + 
-            ' placed='        + st.placedRows   + 
-            ' missing='       + st.missingRows  + 
-            ' renderFailed='  + st.renderFailedRows);
-    }
-    W('');
-    for (var si = 0; si < sheets.length; si++) {
-        W('=== Sheet ' + (si+1) + ' — ' + sheets[si].cells.length + 
-          ' cells, ' + sheets[si].addrInfos.length + ' addresses ===');
-        for (var k = 0; k < sheets[si].addrInfos.length; k++) {
-            var ai = sheets[si].addrInfos[k];
-            W('  ' + ai.addr.label + ' (' + ai.cells.length + ' cells)' +
-              ' bbox=' + r1(ai.outlineL) + 'x' + r1(ai.outlineT) + ' ' +
-              r1(ai.outlineR - ai.outlineL) + 'x' + r1(ai.outlineB - ai.outlineT) + ' mm');
-        }
+            ' | expected=' + st.expectedRows + 
+            ' matched=' + st.matchedRows + 
+            ' placed=' + st.placedRows + 
+            ' missing=' + st.missingRows + 
+            ' renderFailed=' + st.renderFailedRows);
     }
     W('');
     W('Output files:');
@@ -2283,32 +2150,6 @@ function writeReport(outFolder, sheets, addresses) {
             W('  ' + runStats.outputFiles[ofi]);
     } else { W('  (none)'); }
     W('');
-    if (runStats.rowIssues.length) {
-        W('Row issues (' + runStats.rowIssues.length + '):');
-        for (var ri = 0; ri < runStats.rowIssues.length; ri++) {
-            var issue = runStats.rowIssues[ri];
-            W('  [' + issue.kind + '] row=' + issue.rowNumber +
-              ' addr=' + issue.address +
-              ' product=' + issue.product +
-              ' source=' + issue.sourceFileName +
-              ' | ' + issue.message);
-        }
-        W('');
-    }
-    if (runStats.matchReviews.length) {
-        W('Match review (' + runStats.matchReviews.length + '):');
-        for (var mi = 0; mi < runStats.matchReviews.length; mi++) {
-            var mr = runStats.matchReviews[mi];
-            W('  [' + (mr.accepted ? 'AUTO' : 'MISS') + ' ' +
-              scorePct(mr.score) + '% ' + mr.method + '] rows=' + mr.rows +
-              (mr.count > 1 ? ' x' + mr.count : '') +
-              ' addr=' + mr.address +
-              ' product=' + mr.product +
-              ' source=' + mr.sourceFileName +
-              ' -> ' + (mr.matchedName || '(none)'));
-        }
-        W('');
-    }
     if (errs.length) {
         W('Warnings (' + errs.length + '):');
         for (var e = 0; e < errs.length; e++) W('  ' + errs[e]);
@@ -2322,9 +2163,80 @@ function writeReport(outFolder, sheets, addresses) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  SETTINGS DIALOG
+// ─────────────────────────────────────────────────────────────────────────────
+function showSettingsDialog() {
+    var presets = [
+        { label: '3000 x 2000', w: 3000, h: 2000 },
+        { label: '2000 x 3000', w: 2000, h: 3000 }
+    ];
+
+    try {
+        var w = new Window('dialog', 'Bulch Enpack');
+        w.orientation = 'column';
+        w.alignChildren = ['fill', 'top'];
+
+        w.add('statictext', undefined, 'Sheet size (mm):');
+
+        var radioGroup = w.add('panel', undefined, 'Presets');
+        radioGroup.orientation = 'column';
+        radioGroup.alignChildren = ['left', 'top'];
+        var radios = [];
+        for (var i = 0; i < presets.length; i++) {
+            var r = radioGroup.add('radiobutton', undefined, presets[i].label);
+            if (i === 0) r.value = true;
+            radios.push(r);
+        }
+
+        var customGroup = w.add('group');
+        customGroup.add('statictext', undefined, 'W:');
+        var widthEdit = customGroup.add('edittext', undefined, String(SETTINGS.SHEET_WIDTH_MM));
+        widthEdit.characters = 6;
+        customGroup.add('statictext', undefined, 'H:');
+        var heightEdit = customGroup.add('edittext', undefined, String(SETTINGS.SHEET_HEIGHT_MM));
+        heightEdit.characters = 6;
+
+        for (var ri = 0; ri < radios.length; ri++) {
+            radios[ri].onClick = (function(idx) {
+                return function() {
+                    widthEdit.text  = String(presets[idx].w);
+                    heightEdit.text = String(presets[idx].h);
+                };
+            })(ri);
+        }
+
+        var buttons = w.add('group');
+        buttons.alignment = 'right';
+        var cancelBtn = buttons.add('button', undefined, 'Cancel');
+        var okBtn     = buttons.add('button', undefined, 'Start');
+        cancelBtn.onClick = function() { w.close(0); };
+        okBtn.onClick     = function() { w.close(1); };
+
+        if (w.show() !== 1) return false;
+
+        var newW = parseInt(widthEdit.text, 10);
+        var newH = parseInt(heightEdit.text, 10);
+        if (isNaN(newW) || isNaN(newH) || newW < 100 || newH < 100) {
+            alert('Invalid sheet size.');
+            return false;
+        }
+        SETTINGS.SHEET_WIDTH_MM  = newW;
+        SETTINGS.SHEET_HEIGHT_MM = newH;
+        return true;
+    } catch(e) {
+        return true;
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 function main() {
+    try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui0) {}
+    if (!showSettingsDialog()) {
+        return;
+    }
+    
     var prevUI = app.userInteractionLevel;
     app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
     
@@ -2333,7 +2245,6 @@ function main() {
     var addresses    = [];
     var sheets       = [];
     var sheetContexts = [];
-    var totalBoards  = 0;
     
     runStats.startedAt = isoNow();
     runStats.startedMs = nowMs();
@@ -2350,16 +2261,6 @@ function main() {
         addresses = buildAddressesFromData(data);
         runStats.timings.scanMs = nowMs() - t0;
         if (!addresses.length) throw new Error('No addresses built from data');
-        
-        totalBoards = countAddressBoards(addresses);
-        log('Addresses: ' + addresses.length + ', artboards matched: ' + totalBoards);
-        
-        {
-            try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui1) {}
-            var reviewOk = showPreflightDialog();
-            app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
-            if (!reviewOk) throw new Error('Cancelled before build after preflight check');
-        }
         
         t0     = nowMs();
         sheets = buildLayout(addresses);
@@ -2419,53 +2320,18 @@ function main() {
         var placed   = countAddressPlaced(addresses);
         var missing  = expected - matched;
         
-        var msg = 'Bulch Enpack — Done!' +
-            '\n\nTable rows      : ' + runStats.inputRows +
-            '\nExpected copies : ' + expected +
-            '\nArtboards found : ' + matched + ' / ' + expected +
-            (missing > 0 ? '  (!!! ' + missing + ' not found)' : '') +
-            '\nPlaced          : ' + placed +
-            '\nAddresses       : ' + addresses.length +
-            '\nOutput sheets   : ' + sheetContexts.length +
-            '\n\nPhase times (s):' +
-            '\n  scan=' + (Math.round(runStats.timings.scanMs/100)/10) +
-            '  render=' + (Math.round(runStats.timings.renderMs/100)/10) +
-            '  save=' + (Math.round(runStats.timings.saveMs/100)/10) +
-            '\n  total=' + (Math.round(runStats.timings.totalMs/100)/10) +
-            '\n\nFolder: ' + outf.fsName +
-            '\nVerification table: verification-table.tsv';
+        var msg = 'Bulch Enpack - Done!' +
+            '\n\nTable rows: ' + runStats.inputRows +
+            '\nArtboards found: ' + matched + ' / ' + expected +
+            '\nPlaced: ' + placed +
+            '\nOutput sheets: ' + sheetContexts.length +
+            '\n\nFolder: ' + outf.fsName;
         
-        if (runStats.pasteRetryCells) {
-            msg += '\nPaste retries : ' + runStats.pasteRetryCells +
-                   ' cells / ' + runStats.pasteRetryAttempts + ' attempts';
-        }
-        if (SETTINGS.RENDER_ART_CACHE) {
-            msg += '\nArt cache      : ' + runStats.artCachePlacements +
-                   ' placed / ' + runStats.artCacheCopies + ' source copies';
-            if (runStats.artCacheFallbacks)
-                msg += ' / ' + runStats.artCacheFallbacks + ' fallbacks';
-        }
-        if (runStats.matchReviews.length) {
-            msg += '\nMatch review   : ' + runStats.matchReviews.length + ' items';
-        }
-        
-        if (errs.length) {
-            msg += '\n\nWarnings: ' + errs.length + '\nSee report.txt';
-        }
         alert(msg);
         
     } catch(fatal) {
         runStats.fatalError = fatal && fatal.message ? fatal.message : String(fatal);
-        errs.push('FATAL: ' + runStats.fatalError);
-        logs.push('FATAL: ' + runStats.fatalError);
-        try {
-            if (!outf) outf = ensureDir(
-                new Folder(scriptFolder().fsName + '/' + SETTINGS.OUTPUT_FOLDER_NAME));
-            writeReport(outf, sheets, addresses);
-            writeVerificationTable(outf, sheets, addresses);
-        } catch(reportError) {}
-        alert('Bulch Enpack — ERROR\n\n' + runStats.fatalError + 
-              '\n\nSee report.txt');
+        alert('ERROR: ' + runStats.fatalError);
     } finally {
         if (renderCache) closeRenderCache(renderCache);
         app.userInteractionLevel = prevUI;
