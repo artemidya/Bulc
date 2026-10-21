@@ -39,8 +39,8 @@ var SETTINGS = {
     CURRENT_DATA_JSON_RELATIVE: 'build/layout-data.current.json',
     NODE_BIN:                   'node',
     
-    SHEET_WIDTH_MM:  2010,
-    SHEET_HEIGHT_MM: 3030,
+    SHEET_WIDTH_MM:  2000,
+    SHEET_HEIGHT_MM: 3000,
     SHEET_MARGIN_MM: 0,
     
     ARTBOARD_GAP_MM: 3,
@@ -2212,73 +2212,10 @@ function writeReport(outFolder, sheets, addresses) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  SETTINGS DIALOG
-// ─────────────────────────────────────────────────────────────────────────────
-function showSettingsDialog() {
-    var presets = [
-        { label: '2010 × 3030 мм (по умолчанию)', w: 2010, h: 3030 },
-        { label: '3030 × 2010 мм', w: 3030, h: 2010 },
-        { label: '1000 × 1000 мм', w: 1000, h: 1000 }
-    ];
-    try {
-        var w = new Window('dialog', 'Bulch Enpack — Настройки листа');
-        w.orientation = 'column';
-        w.alignChildren = ['fill', 'top'];
-        w.add('statictext', undefined, 'Выберите размер листа (мм):');
-        var radioGroup = w.add('panel', undefined, 'Предустановки');
-        radioGroup.orientation = 'column';
-        radioGroup.alignChildren = ['left', 'top'];
-        var radios = [];
-        for (var i = 0; i < presets.length; i++) {
-            var r = radioGroup.add('radiobutton', undefined, presets[i].label);
-            if (i === 0) r.value = true;
-            radios.push(r);
-        }
-        var customGroup = w.add('group');
-        customGroup.add('statictext', undefined, 'Свой размер — Ширина:');
-        var widthEdit = customGroup.add('edittext', undefined, String(SETTINGS.SHEET_WIDTH_MM));
-        widthEdit.characters = 6;
-        customGroup.add('statictext', undefined, 'Высота:');
-        var heightEdit = customGroup.add('edittext', undefined, String(SETTINGS.SHEET_HEIGHT_MM));
-        heightEdit.characters = 6;
-        for (var ri = 0; ri < radios.length; ri++) {
-            radios[ri].onClick = (function(idx) {
-                return function() {
-                    widthEdit.text = String(presets[idx].w);
-                    heightEdit.text = String(presets[idx].h);
-                };
-            })(ri);
-        }
-        var buttons = w.add('group');
-        buttons.alignment = 'right';
-        var cancelBtn = buttons.add('button', undefined, 'Отмена');
-        var okBtn = buttons.add('button', undefined, 'Начать сборку');
-        cancelBtn.onClick = function() { w.close(0); };
-        okBtn.onClick = function() { w.close(1); };
-        if (w.show() !== 1) return false;
-        var newW = parseInt(widthEdit.text, 10);
-        var newH = parseInt(heightEdit.text, 10);
-        if (isNaN(newW) || isNaN(newH) || newW < 100 || newH < 100) {
-            alert('Недопустимые размеры листа.');
-            return false;
-        }
-        SETTINGS.SHEET_WIDTH_MM = newW;
-        SETTINGS.SHEET_HEIGHT_MM = newH;
-        return true;
-    } catch(e) {
-        if (!confirm('Размер листа: ' + SETTINGS.SHEET_WIDTH_MM + ' × ' + SETTINGS.SHEET_HEIGHT_MM + ' мм.\n\nНачать сборку?')) return false;
-        return true;
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
 //  MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 function main() {
-    var prevUI = null;
-    try { prevUI = app.userInteractionLevel; } catch(uiPrev) {}
-    try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui0) {}
-    if (!showSettingsDialog()) return;
+    var prevUI = app.userInteractionLevel;
     app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
     
     var renderCache  = null;
