@@ -2290,6 +2290,15 @@ function main() {
         runStats.timings.scanMs = nowMs() - t0;
         if (!addresses.length) throw new Error('No addresses built from data');
         
+        
+        // Show match review dialog before layout
+        {
+            try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui1) {}
+            var reviewOk = showPreflightDialog();
+            app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
+            if (!reviewOk) throw new Error('Cancelled before build after preflight check');
+        }
+        
         t0     = nowMs();
         sheets = buildLayout(addresses);
         log('Sheets needed: ' + sheets.length);
