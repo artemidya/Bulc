@@ -976,8 +976,10 @@ function buildAddressesFromData(data) {
         if (!sourceDocs[path]) {
             var file = new File(path);
             if (!file.exists) throw new Error('Missing source file: ' + path);
+            log('OPEN: ' + decodedName(file));
             var doc = app.open(file);
             setMM(doc);
+            log('OPENED: ' + decodedName(file) + ' (' + doc.artboards.length + ' artboards)');
             sourceDocs[path]  = {
                 doc: doc,
                 file: file,
@@ -993,9 +995,19 @@ function buildAddressesFromData(data) {
     
     try {
         var alreadyExpanded = dataAlreadyExpandedByQuantity(data);
+        var lastFileLogged = '';
         for (var i = 0; i < data.items.length; i++) {
             var item = data.items[i];
             var copyCount = copyCountForItem(data, item);
+            
+            // Progress logging every 50 rows or on new file
+            if (i % 50 === 0 || (item && item.sourceFile && item.sourceFile !== lastFileLogged)) {
+                log('SCAN: row ' + (i+1) + '/' + data.items.length + 
+                    (item && item.sourceFileName ? ' file: ' + item.sourceFileName : ''));
+                if (item && item.sourceFile) lastFileLogged = item.sourceFile;
+            }
+            // Periodic GC to prevent memory buildup
+            if (i % 100 === 0 && i > 0) safeGC();
             if (copyCount < 1) continue;
             
             for (var rc = 0; rc < copyCount; rc++) recordTableRow(item);
