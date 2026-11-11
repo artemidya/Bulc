@@ -1008,8 +1008,11 @@ function buildAddressesFromData(data) {
                     (item && item.sourceFileName ? ' file: ' + item.sourceFileName : ''));
                 if (item && item.sourceFile) lastFileLogged = item.sourceFile;
             }
-            // Periodic GC to prevent memory buildup
-            if (i % 100 === 0 && i > 0) safeGC();
+            // Periodic GC + redraw to prevent memory buildup and freezes
+            if (i % 25 === 0 && i > 0) {
+                safeGC();
+                safeRedraw();
+            }
             if (copyCount < 1) continue;
             
             for (var rc = 0; rc < copyCount; rc++) recordTableRow(item);
@@ -2352,16 +2355,12 @@ function main() {
         
         // Source files are still open from scan — reuse them for render
         
-        // Show match review dialog before layout
-        {
-            try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui1) {}
-            var reviewOk = showPreflightDialog();
-            app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
-            if (!reviewOk) throw new Error('Cancelled before build after preflight check');
-        }
+        // Preflight check — auto-continue (dialog disabled to prevent freezes)
+        log('Preflight: ' + runStats.matchReviews.length + ' reviews, skipping dialog');
         
         safeGC();
         safeRedraw();
+        safeSleep(500);
         
         updateProgress('Раскладка...', 25);
         t0     = nowMs();
@@ -2413,6 +2412,8 @@ function main() {
                     ctx.doc = null;
                 }
                 safeGC();
+                safeRedraw();
+                safeSleep(200); // pause between sheets
             }
         }
         
