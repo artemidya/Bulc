@@ -2269,16 +2269,62 @@ function showSettingsDialog() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
+//  PROGRESS PALETTE (non-blocking floating window)
+// ─────────────────────────────────────────────────────────────────────────────
+var progressPalette = null;
+var progressLabel = null;
+var progressBar = null;
+
+function createProgressPalette() {
+    try {
+        progressPalette = new Window('palette', 'Bulch Enpack');
+        progressPalette.orientation = 'column';
+        progressPalette.alignChildren = ['fill', 'top'];
+        progressPalette.preferredSize = [350, -1];
+        
+        progressLabel = progressPalette.add('statictext', undefined, 'Запуск...');
+        progressLabel.alignment = ['fill', 'top'];
+        
+        progressBar = progressPalette.add('progressbar', undefined, 0, 100);
+        progressBar.preferredSize = [330, 12];
+        
+        progressPalette.show();
+    } catch(e) {
+        progressPalette = null;
+    }
+}
+
+function updateProgress(text, percent) {
+    if (!progressPalette) return;
+    try {
+        progressLabel.text = text;
+        if (typeof percent === 'number') progressBar.value = Math.min(100, Math.max(0, percent));
+        progressPalette.update();
+    } catch(e) {}
+}
+
+function closeProgressPalette() {
+    if (!progressPalette) return;
+    try { progressPalette.close(); } catch(e) {}
+    progressPalette = null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 //  MAIN
 // ─────────────────────────────────────────────────────────────────────────────
 function main() {
+    // Settings dialog — user must interact
     try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui0) {}
     if (!showSettingsDialog()) {
         return;
     }
     
+    // Quiet mode from here on
     var prevUI = app.userInteractionLevel;
     app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
+    
+    // Show progress palette
+    createProgressPalette();
     
     var renderCache  = null;
     var outf         = null;
@@ -2294,9 +2340,11 @@ function main() {
         outf   = ensureDir(new Folder(sf.fsName + '/' + SETTINGS.OUTPUT_FOLDER_NAME));
         
         var t0 = nowMs();
+        updateProgress('Загрузка таблицы...', 5);
         var data = loadTableData();
         runStats.timings.loadMs = nowMs() - t0;
         
+        updateProgress('Сканирование артбордов...', 10);
         t0        = nowMs();
         addresses = buildAddressesFromData(data);
         runStats.timings.scanMs = nowMs() - t0;
@@ -2315,6 +2363,7 @@ function main() {
         safeGC();
         safeRedraw();
         
+        updateProgress('Раскладка...', 25);
         t0     = nowMs();
         sheets = buildLayout(addresses);
         log('Sheets needed: ' + sheets.length);
@@ -2332,6 +2381,9 @@ function main() {
                 ctx = createSheetRenderContext(sheets[s]);
                 sheetContexts.push(ctx);
                 
+                var renderPct = 30 + Math.round((s / sheets.length) * 50);
+                updateProgress('Сборка листа ' + sheetNumber + '/' + sheets.length + ' (' + sheets[s].cells.length + ' ячеек)...', renderPct);
+                
                 t0 = nowMs();
                 log('Render sheet ' + sheetNumber + '/' + sheets.length +
                     ': ' + sheets[s].cells.length + ' cells');
@@ -2339,11 +2391,13 @@ function main() {
                 runStats.timings.renderMs += nowMs() - t0;
                 clearSheetArtCache(ctx);
                 
+                updateProgress('Обработка слоёв листа ' + sheetNumber + '...', 82);
                 t0 = nowMs();
                 finalizeSheetContext(ctx);
                 safeRedraw();
                 runStats.timings.finalizeMs += nowMs() - t0;
                 
+                updateProgress('Сохранение листа ' + sheetNumber + '...', 88);
                 t0 = nowMs();
                 var outFile = new File(
                     outf.fsName + '/' + SETTINGS.OUTPUT_BASENAME + pad(sheetNumber, 3) + '.ai');
@@ -2362,6 +2416,7 @@ function main() {
             }
         }
         
+        updateProgress('Отчёт...', 95);
         writeReport(outf, sheets, addresses);
         writeVerificationTable(outf, sheets, addresses);
         
@@ -2370,6 +2425,8 @@ function main() {
         var placed   = countAddressPlaced(addresses);
         var missing  = expected - matched;
         
+        updateProgress('Готово!', 100);
+        
         var msg = 'Bulch Enpack - Done!' +
             '\n\nTable rows: ' + runStats.inputRows +
             '\nArtboards found: ' + matched + ' / ' + expected +
@@ -2377,12 +2434,15 @@ function main() {
             '\nOutput sheets: ' + sheetContexts.length +
             '\n\nFolder: ' + outf.fsName;
         
+        closeProgressPalette();
         alert(msg);
         
     } catch(fatal) {
+        closeProgressPalette();
         runStats.fatalError = fatal && fatal.message ? fatal.message : String(fatal);
         alert('ERROR: ' + runStats.fatalError);
     } finally {
+        closeProgressPalette();
         if (renderCache) closeRenderCache(renderCache);
         app.userInteractionLevel = prevUI;
     }
