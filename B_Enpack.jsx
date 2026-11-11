@@ -2355,8 +2355,13 @@ function main() {
         
         // Source files are still open from scan — reuse them for render
         
-        // Preflight check — auto-continue (dialog disabled to prevent freezes)
-        log('Preflight: ' + runStats.matchReviews.length + ' reviews, skipping dialog');
+        // Show match review dialog before layout
+        {
+            try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui1) {}
+            var reviewOk = showPreflightDialog();
+            app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
+            if (!reviewOk) throw new Error('Cancelled before build after preflight check');
+        }
         
         safeGC();
         safeRedraw();
