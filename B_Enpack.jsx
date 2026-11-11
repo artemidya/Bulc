@@ -100,6 +100,8 @@ var errs = [];
 var renderAttemptCounter = 0;
 var lastArtboardMatchInfo = null;
 var matchReviewSeen = {};
+var globalSourceDocs = {};   // Keep source docs open between scan and render
+var globalSourceDocList = [];
 
 var runStats = {
     startedAt:          '',
@@ -954,8 +956,8 @@ function labelReserveWidth(label) {
 function buildAddressesFromData(data) {
     var addrMap      = {};
     var addresses    = [];
-    var sourceDocs   = {};
-    var sourceDocList = [];
+    var sourceDocs   = globalSourceDocs;
+    var sourceDocList = globalSourceDocList;
     
     function getAddress(label) {
         label = trimString(label) || 'output';
@@ -1075,10 +1077,8 @@ function buildAddressesFromData(data) {
             }
         }
     } finally {
-        for (var c = 0; c < sourceDocList.length; c++) {
-            try { sourceDocList[c].doc.close(SaveOptions.DONOTSAVECHANGES); } catch(e) {}
-            safeSleep(100); // let Illustrator settle after each file close
-        }
+        // Don't close source files here — keep them open for render phase.
+        // They will be closed in main() after all sheets are rendered.
         safeGC();
         safeRedraw();
     }
@@ -1863,6 +1863,16 @@ function ensureAddressGroup(ctx, addr) {
 //  RENDER CACHE
 // ─────────────────────────────────────────────────────────────────────────────
 function createRenderCache() { return { docs: {}, list: [] }; }
+function createRenderCacheFromScan() {
+    // Reuse source docs from scan phase — no need to reopen files
+    var cache = { docs: {}, list: [] };
+    for (var path in globalSourceDocs) {
+        if (globalSourceDocs.hasOwnProperty(path)) {
+            cache.docs[path] = globalSourceDocs[path];
+        }
+    }
+    return cache;
+}
 function getRenderSourceDoc(cache, board) {
     var key = board.fileKey;
     if (!cache.docs[key]) {
@@ -2292,11 +2302,7 @@ function main() {
         runStats.timings.scanMs = nowMs() - t0;
         if (!addresses.length) throw new Error('No addresses built from data');
         
-        
-        // Let Illustrator settle after closing source files
-        safeGC();
-        safeRedraw();
-        safeSleep(1000);
+        // Source files are still open from scan — reuse them for render
         
         // Show match review dialog before layout
         {
@@ -2306,15 +2312,16 @@ function main() {
             if (!reviewOk) throw new Error('Cancelled before build after preflight check');
         }
         
-        // Let Illustrator settle after dialog
         safeGC();
         safeRedraw();
-        safeSleep(500);
         
         t0     = nowMs();
         sheets = buildLayout(addresses);
         log('Sheets needed: ' + sheets.length);
         runStats.timings.layoutMs = nowMs() - t0;
+        
+        // Create ONE render cache reusing already-open source docs
+        renderCache = createRenderCacheFromScan();
         
         for (var s = 0; s < sheets.length; s++) {
             if (!sheets[s].cells.length) continue;
@@ -2326,12 +2333,9 @@ function main() {
                 sheetContexts.push(ctx);
                 
                 t0 = nowMs();
-                renderCache = createRenderCache();
                 log('Render sheet ' + sheetNumber + '/' + sheets.length +
                     ': ' + sheets[s].cells.length + ' cells');
                 renderSheetContext(ctx, renderCache, sheetNumber, sheets.length);
-                closeRenderCache(renderCache);
-                renderCache = null;
                 runStats.timings.renderMs += nowMs() - t0;
                 clearSheetArtCache(ctx);
                 
@@ -2348,10 +2352,7 @@ function main() {
                 runStats.outputFiles.push(outFile.fsName);
                 runStats.timings.saveMs += nowMs() - t0;
             } finally {
-                if (renderCache) {
-                    closeRenderCache(renderCache);
-                    renderCache = null;
-                }
+                // Don't close renderCache here — it has shared source docs
                 if (ctx && ctx.doc) {
                     clearSheetArtCache(ctx);
                     try { ctx.doc.close(SaveOptions.DONOTSAVECHANGES); } catch(e) {}
