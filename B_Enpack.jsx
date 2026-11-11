@@ -1077,8 +1077,10 @@ function buildAddressesFromData(data) {
     } finally {
         for (var c = 0; c < sourceDocList.length; c++) {
             try { sourceDocList[c].doc.close(SaveOptions.DONOTSAVECHANGES); } catch(e) {}
+            safeSleep(100); // let Illustrator settle after each file close
         }
         safeGC();
+        safeRedraw();
     }
     
     var elapsed = nowMs() - startMs;
@@ -2291,6 +2293,11 @@ function main() {
         if (!addresses.length) throw new Error('No addresses built from data');
         
         
+        // Let Illustrator settle after closing source files
+        safeGC();
+        safeRedraw();
+        safeSleep(1000);
+        
         // Show match review dialog before layout
         {
             try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui1) {}
@@ -2298,6 +2305,11 @@ function main() {
             app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
             if (!reviewOk) throw new Error('Cancelled before build after preflight check');
         }
+        
+        // Let Illustrator settle after dialog
+        safeGC();
+        safeRedraw();
+        safeSleep(500);
         
         t0     = nowMs();
         sheets = buildLayout(addresses);
