@@ -39,8 +39,8 @@ var SETTINGS = {
     CURRENT_DATA_JSON_RELATIVE: 'build/layout-data.current.json',
     NODE_BIN:                   'node',
     
-    SHEET_WIDTH_MM:  3000,
-    SHEET_HEIGHT_MM: 2000,
+    SHEET_WIDTH_MM:  2000,
+    SHEET_HEIGHT_MM: 3000,
     SHEET_MARGIN_MM: 0,
     
     ARTBOARD_GAP_MM: 3,
@@ -981,6 +981,8 @@ function buildAddressesFromData(data) {
             log('OPEN: ' + decodedName(file));
             var doc = app.open(file);
             setMM(doc);
+            // Hide the document window — quiet mode
+            try { doc.windows[0].visible = false; } catch(e) {}
             log('OPENED: ' + decodedName(file) + ' (' + doc.artboards.length + ' artboards)');
             sourceDocs[path]  = {
                 doc: doc,
@@ -1840,6 +1842,8 @@ function createSheetDoc() {
     doc.artboards[0].artboardRect = [
         0, mm(SETTINGS.SHEET_HEIGHT_MM),
         mm(SETTINGS.SHEET_WIDTH_MM), 0];
+    // Hide the document window — quiet mode
+    try { doc.windows[0].visible = false; } catch(e) {}
     return doc;
 }
 function createSheetRenderContext(sheetData) {
@@ -1881,6 +1885,8 @@ function getRenderSourceDoc(cache, board) {
     if (!cache.docs[key]) {
         var doc = app.open(board.file);
         setMM(doc);
+        // Hide the document window — quiet mode
+        try { doc.windows[0].visible = false; } catch(e) {}
         cache.docs[key] = { doc: doc, state: { cleaned: false } };
         cache.list.push(cache.docs[key]);
     }
@@ -2210,8 +2216,8 @@ function writeReport(outFolder, sheets, addresses) {
 // ─────────────────────────────────────────────────────────────────────────────
 function showSettingsDialog() {
     var presets = [
-        { label: '3000 x 2000', w: 3000, h: 2000 },
-        { label: '2000 x 3000', w: 2000, h: 3000 }
+        { label: '2000 x 3000 (книжный)', w: 2000, h: 3000 },
+        { label: '3000 x 2000 (альбомный)', w: 3000, h: 2000 }
     ];
 
     try {
