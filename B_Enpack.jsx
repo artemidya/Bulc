@@ -62,7 +62,7 @@ var SETTINGS = {
     OUTLINE_STROKE_MM:    1,
     
     ROTATION_THRESHOLD_MM: 140,
-    CLIP_TO_ARTBOARD:      false, // TEST: disabled to check clipping conflict
+    CLIP_TO_ARTBOARD:      true, // Smart: disabled automatically if cell has internal clipping groups
     
     PDF_COMPATIBLE:  false,
     COMPRESSED_SAVE: false,
@@ -162,6 +162,32 @@ function msText(v) {
 function safeGC()      { try { $.gc(); } catch(e) {} }
 function safeRedraw()  { try { app.redraw(); } catch(e) {} }
 function safeSleep(ms) { try { $.sleep(ms); } catch(e) {} }
+function getTimestampForFilename() {
+    var d = new Date();
+    function p(v) { return v < 10 ? '0' + v : String(v); }
+    return d.getFullYear() + '-' + p(d.getMonth()+1) + '-' + p(d.getDate()) + '_' +
+           p(d.getHours()) + '-' + p(d.getMinutes()) + '-' + p(d.getSeconds());
+}
+function hasInternalClipping(container) {
+    if (!container) return false;
+    try {
+        if (container.clipped) return true;
+    } catch(e) {}
+    try {
+        for (var i = 0; i < container.groupItems.length; i++) {
+            if (hasInternalClipping(container.groupItems[i])) return true;
+        }
+    } catch(e) {}
+    try {
+        for (var j = 0; j < container.pageItems.length; j++) {
+            var item = container.pageItems[j];
+            try {
+                if (item.typename === 'GroupItem' && item.clipped) return true;
+            } catch(e) {}
+        }
+    } catch(e) {}
+    return false;
+}
 function maybeRedraw(step, every) {
     if (SETTINGS.TURBO_MODE) return;
     if (!every || every < 1) return;
@@ -1503,7 +1529,7 @@ function renderCell(srcDoc, destDoc, cell, parentGroup, sheetDocTop, docState) {
     artGrp.translate(destL - mkB[0], destT - mkB[1]);
     if (board.rotated90) rotateGroup90(artGrp, destL, destT, board.origW, board.origH);
     
-    if (SETTINGS.CLIP_TO_ARTBOARD) {
+    if (SETTINGS.CLIP_TO_ARTBOARD && !hasInternalClipping(artGrp)) {
         var cg = destDoc.groupItems.add();
         cg.name = addr.label + '/clip/row' + board.rowNumber;
         var cr  = destDoc.pathItems.rectangle(destT, destL, board.w, board.h);
@@ -1643,7 +1669,7 @@ function placeCachedArtGroup(ctx, entry, cell, parentGroup) {
         var anchorH = entry.anchor[3] - entry.anchor[1];
         if (board.rotated90) rotateGroup90(artGrp, destL, destT, anchorW, anchorH);
         
-        if (SETTINGS.CLIP_TO_ARTBOARD) {
+        if (SETTINGS.CLIP_TO_ARTBOARD && !hasInternalClipping(artGrp)) {
             clipGrp = destDoc.groupItems.add();
             clipGrp.name = cell.addr.label + '/clip/row' + board.rowNumber;
             var cr = destDoc.pathItems.rectangle(destT, destL, board.w, board.h);
@@ -2371,6 +2397,9 @@ function main() {
         return;
     }
     
+    // Generate timestamp for output filenames (same for all sheets in this run)
+    var runTimestamp = getTimestampForFilename();
+    
     // Quiet mode from here on
     var prevUI = app.userInteractionLevel;
     app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
@@ -2458,7 +2487,7 @@ function main() {
                 updateProgress('Сохранение листа ' + sheetNumber + '...', 88);
                 t0 = nowMs();
                 var outFile = new File(
-                    outf.fsName + '/' + SETTINGS.OUTPUT_BASENAME + pad(sheetNumber, 3) + '.ai');
+                    outf.fsName + '/' + SETTINGS.OUTPUT_BASENAME + pad(sheetNumber, 3) + '_' + runTimestamp + '.ai');
                 log('Saving: ' + outFile.fsName);
                 saveDoc(ctx.doc, outFile);
                 runStats.outputFiles.push(outFile.fsName);
