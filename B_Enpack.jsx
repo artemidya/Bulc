@@ -1300,16 +1300,31 @@ function sourceLayerKind(item) {
 }
 function isCircleMarkerPath(item) {
     try {
+        // Strict magnet criteria: ~5×5mm, stroke ~0.1mm, no fill
         if (!item.closed || item.filled) return false;
+        if (!item.stroked) return false;
+        
+        // Check size: should be ~5mm (tolerance 3-7mm)
+        var b = item.geometricBounds;
+        var wPt = Math.abs(b[2] - b[0]);
+        var hPt = Math.abs(b[1] - b[3]);
+        var wMm = pt(wPt);  // convert pt to mm
+        var hMm = pt(hPt);
+        if (wMm < 3 || wMm > 7) return false;  // must be ~5mm width
+        if (hMm < 3 || hMm > 7) return false;  // must be ~5mm height
+        
+        // Check aspect ratio: should be nearly square
+        var aspectRatio = Math.max(wMm, hMm) / Math.min(wMm, hMm);
+        if (aspectRatio > 1.3) return false;
+        
+        // Check stroke width: should be ~0.1mm (tolerance 0.05-0.15mm)
+        var strokeMm = pt(item.strokeWidth);
+        if (strokeMm < 0.05 || strokeMm > 0.15) return false;
+        
+        // Check point count: simple shapes (3-8 points)
         var pointCount = item.pathPoints.length;
         if (pointCount < 3 || pointCount > 8) return false;
-        var b = item.geometricBounds;
-        var w = Math.abs(b[2] - b[0]);
-        var h = Math.abs(b[1] - b[3]);
-        if (w < 0.1 || h < 0.1) return false;
-        var aspectRatio = Math.max(w, h) / Math.min(w, h);
-        if (aspectRatio > 1.3) return false;
-        if (!item.stroked) return false;
+        
         return true;
     } catch(e) { 
         return false; 
