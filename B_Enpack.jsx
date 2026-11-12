@@ -62,7 +62,7 @@ var SETTINGS = {
     OUTLINE_STROKE_MM:    1,
     
     ROTATION_THRESHOLD_MM: 140,
-    CLIP_TO_ARTBOARD:      true,
+    CLIP_TO_ARTBOARD:      false, // TEST: disabled to check clipping conflict
     
     PDF_COMPATIBLE:  false,
     COMPRESSED_SAVE: false,
