@@ -1298,6 +1298,19 @@ function sourceLayerKind(item) {
     if (name.indexOf('cut') >= 0 || name.indexOf('\u0440\u0435\u0437') >= 0 || name.indexOf('cutting') >= 0) return 'CUT';
     return '';
 }
+function isValidMagnetSize(item) {
+    // Strict size check: ~5×5mm (tolerance 3-7mm)
+    try {
+        var b = item.geometricBounds;
+        var wMm = pt(Math.abs(b[2] - b[0]));
+        var hMm = pt(Math.abs(b[1] - b[3]));
+        if (wMm < 3 || wMm > 7) return false;
+        if (hMm < 3 || hMm > 7) return false;
+        return true;
+    } catch(e) {
+        return false;
+    }
+}
 function isCircleMarkerPath(item) {
     try {
         // Strict magnet criteria: ~5×5mm, stroke ~0.1mm, no fill
@@ -1305,15 +1318,12 @@ function isCircleMarkerPath(item) {
         if (!item.stroked) return false;
         
         // Check size: should be ~5mm (tolerance 3-7mm)
-        var b = item.geometricBounds;
-        var wPt = Math.abs(b[2] - b[0]);
-        var hPt = Math.abs(b[1] - b[3]);
-        var wMm = pt(wPt);  // convert pt to mm
-        var hMm = pt(hPt);
-        if (wMm < 3 || wMm > 7) return false;  // must be ~5mm width
-        if (hMm < 3 || hMm > 7) return false;  // must be ~5mm height
+        if (!isValidMagnetSize(item)) return false;
         
         // Check aspect ratio: should be nearly square
+        var b = item.geometricBounds;
+        var wMm = pt(Math.abs(b[2] - b[0]));
+        var hMm = pt(Math.abs(b[1] - b[3]));
         var aspectRatio = Math.max(wMm, hMm) / Math.min(wMm, hMm);
         if (aspectRatio > 1.3) return false;
         
@@ -1340,6 +1350,10 @@ function tagOperationalPaths(srcDoc, board, excludeItem) {
                 item = container.pathItems[i];
                 if (item === excludeItem) continue;
                 kind = sourceLayerKind(item);
+                // Even if on "magnet" layer — must pass size check
+                if (kind === 'MAGNET' && !isValidMagnetSize(item)) {
+                    kind = '';  // reject: wrong size
+                }
                 if (!kind && isCircleMarkerPath(item)) kind = 'MAGNET';
                 if (!kind || !intersectsBoard(item, board.rect)) continue;
                 try { changed.push({ item: item, name: item.name }); item.name = OPERATIONAL_PFX + kind + '__' + i; } catch(e) {}
