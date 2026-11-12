@@ -2332,7 +2332,10 @@ function main() {
     var prevUI = app.userInteractionLevel;
     app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
     
-    // Show progress palette
+    // Hide Illustrator completely — files will open invisibly
+    try { app.visible = false; } catch(e) {}
+    
+    // Show progress palette (script UI, independent of app.visible)
     createProgressPalette();
     
     var renderCache  = null;
@@ -2363,9 +2366,11 @@ function main() {
         
         // Show match review dialog before layout
         {
+            try { app.visible = true; } catch(e) {}
             try { app.userInteractionLevel = UserInteractionLevel.DISPLAYALERTS; } catch(ui1) {}
             var reviewOk = showPreflightDialog();
             app.userInteractionLevel = UserInteractionLevel.DONTDISPLAYALERTS;
+            try { app.visible = false; } catch(e) {}
             if (!reviewOk) throw new Error('Cancelled before build after preflight check');
         }
         
@@ -2439,6 +2444,8 @@ function main() {
         
         updateProgress('Готово!', 100);
         
+        try { app.visible = true; } catch(e) {}
+        
         var msg = 'Bulch Enpack - Done!' +
             '\n\nTable rows: ' + runStats.inputRows +
             '\nArtboards found: ' + matched + ' / ' + expected +
@@ -2451,10 +2458,12 @@ function main() {
         
     } catch(fatal) {
         closeProgressPalette();
+        try { app.visible = true; } catch(e) {}
         runStats.fatalError = fatal && fatal.message ? fatal.message : String(fatal);
         alert('ERROR: ' + runStats.fatalError);
     } finally {
         closeProgressPalette();
+        try { app.visible = true; } catch(e) {}
         if (renderCache) closeRenderCache(renderCache);
         app.userInteractionLevel = prevUI;
     }
