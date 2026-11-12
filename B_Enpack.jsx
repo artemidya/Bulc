@@ -1403,21 +1403,38 @@ function pasteIntoDestDoc(destDoc) {
 function rotateGroup90(grp, destL, destT, anchorW, anchorH) {
     try {
         // anchorW, anchorH — размеры маркера (исходного артборда) ДО поворота
-        // Маркер сейчас расположен от (destL, destT) до (destL+anchorW, destT+anchorH)
-        // Центр маркера:
-        var cx = destL + anchorW / 2;
-        var cy = destT + anchorH / 2;
-        // Центр группы:
+        // anchorH может быть < 0 в AI координатах (Y идёт снизу вверх: top > bottom)
+        
+        // 1. Запомнить центр группы (вокруг него будет rotate)
         var gb = grp.geometricBounds;
         var gcx = (gb[0] + gb[2]) / 2;
         var gcy = (gb[1] + gb[3]) / 2;
-        // 1. Совместить центр группы с центром маркера
-        grp.translate(cx - gcx, cy - gcy);
-        // 2. Rotate -90° вокруг центра группы (= центр маркера)
+        
+        // 2. 4 угла маркера ДО rotate
+        var corners = [
+            [destL, destT],
+            [destL + anchorW, destT],
+            [destL, destT + anchorH],
+            [destL + anchorW, destT + anchorH]
+        ];
+        
+        // 3. Rotate -90° вокруг центра группы
         grp.rotate(-90, true, true, true, true, Transformation.CENTER);
-        // 3. Позиционировать top-left в (destL, destT)
-        var gb2 = grp.geometricBounds;
-        grp.translate(destL - gb2[0], destT - gb2[1]);
+        
+        // 4. Вычислить где оказались углы маркера после rotate
+        // Rotate -90° вокруг (gcx, gcy):
+        //   x' = gcx + (y - gcy)
+        //   y' = gcy - (x - gcx)
+        var minX = 1e12, maxY = -1e12;
+        for (var i = 0; i < corners.length; i++) {
+            var rx = gcx + (corners[i][1] - gcy);
+            var ry = gcy - (corners[i][0] - gcx);
+            if (rx < minX) minX = rx;
+            if (ry > maxY) maxY = ry; // maxY = top в AI координатах
+        }
+        
+        // 5. Сдвинуть группу так, чтобы top-left маркера стал в (destL, destT)
+        grp.translate(destL - minX, destT - maxY);
     } catch(e) { warn('Rotate failed: ' + e.message); }
 }
 
