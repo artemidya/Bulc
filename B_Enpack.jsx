@@ -1400,11 +1400,24 @@ function pasteIntoDestDoc(destDoc) {
 // ─────────────────────────────────────────────────────────────────────────────
 //  RENDER CELL
 // ─────────────────────────────────────────────────────────────────────────────
-function rotateGroup90(grp, destL, destT) {
+function rotateGroup90(grp, destL, destT, anchorW, anchorH) {
     try {
-        grp.rotate(-90, true, true, true, true, Transformation.CENTER);
+        // anchorW, anchorH — размеры маркера (исходного артборда) ДО поворота
+        // Маркер сейчас расположен от (destL, destT) до (destL+anchorW, destT+anchorH)
+        // Центр маркера:
+        var cx = destL + anchorW / 2;
+        var cy = destT + anchorH / 2;
+        // Центр группы:
         var gb = grp.geometricBounds;
-        grp.translate(destL - gb[0], destT - gb[1]);
+        var gcx = (gb[0] + gb[2]) / 2;
+        var gcy = (gb[1] + gb[3]) / 2;
+        // 1. Совместить центр группы с центром маркера
+        grp.translate(cx - gcx, cy - gcy);
+        // 2. Rotate -90° вокруг центра группы (= центр маркера)
+        grp.rotate(-90, true, true, true, true, Transformation.CENTER);
+        // 3. Позиционировать top-left в (destL, destT)
+        var gb2 = grp.geometricBounds;
+        grp.translate(destL - gb2[0], destT - gb2[1]);
     } catch(e) { warn('Rotate failed: ' + e.message); }
 }
 
@@ -1471,7 +1484,7 @@ function renderCell(srcDoc, destDoc, cell, parentGroup, sheetDocTop, docState) {
     }
     if (mk) try { mk.remove(); } catch(e3) {}
     artGrp.translate(destL - mkB[0], destT - mkB[1]);
-    if (board.rotated90) rotateGroup90(artGrp, destL, destT);
+    if (board.rotated90) rotateGroup90(artGrp, destL, destT, board.origW, board.origH);
     
     if (SETTINGS.CLIP_TO_ARTBOARD) {
         var cg = destDoc.groupItems.add();
@@ -1609,7 +1622,9 @@ function placeCachedArtGroup(ctx, entry, cell, parentGroup) {
         artGrp = entry.group.duplicate(parentGroup, ElementPlacement.PLACEATEND);
         artGrp.name = cell.addr.label + '/row' + board.rowNumber + '/' + board.product;
         artGrp.translate(destL - entry.anchor[0], destT - entry.anchor[1]);
-        if (board.rotated90) rotateGroup90(artGrp, destL, destT);
+        var anchorW = entry.anchor[2] - entry.anchor[0];
+        var anchorH = entry.anchor[3] - entry.anchor[1];
+        if (board.rotated90) rotateGroup90(artGrp, destL, destT, anchorW, anchorH);
         
         if (SETTINGS.CLIP_TO_ARTBOARD) {
             clipGrp = destDoc.groupItems.add();
@@ -1784,11 +1799,12 @@ function setTechnicalStroke(item, color, widthPt) {
     try { item.filled = false; item.stroked = true; item.strokeColor = color; item.strokeWidth = widthPt; } catch(e) {}
 }
 function routeTaggedOperationalPaths(tech, container) {
-    var stats = { magnet: 0, cut: 0 };
+    var stats = { magnet: 0, cut: 0, scanned: 0 };
     function scan(parent) {
         if (!parent) return;
         var i, p, name;
         try {
+            stats.scanned++;
             for (i = parent.pathItems.length - 1; i >= 0; i--) {
                 p = parent.pathItems[i]; name = '';
                 try { name = String(p.name || ''); } catch(e) {}
@@ -1813,7 +1829,7 @@ function routeTaggedOperationalPaths(tech, container) {
         } catch(e) {}
     }
     scan(container);
-    log('DIAG route: magnet=' + stats.magnet + ' cut=' + stats.cut);
+    log('DIAG route: magnet=' + stats.magnet + ' cut=' + stats.cut + ' groups=' + stats.scanned);
 }
 function copyAddressControls(ctx, tech) {
     var stats = { copied: 0 };
@@ -1978,15 +1994,25 @@ function renderSheetContext(ctx, cache, sheetIndex, sheetCount) {
 }
 
 function finalizeSheetContext(ctx) {
+    log('Finalize: drawing outlines for ' + ctx.sheetData.addrInfos.length + ' addresses');
     for (var k = 0; k < ctx.sheetData.addrInfos.length; k++) {
         var ai = ctx.sheetData.addrInfos[k];
         if (!ctx.addrGroups[ai.addr.label]) continue;
         drawAddressOutline(ctx.doc, ctx.addrGroups[ai.addr.label], ai, ctx.sheetDocTop);
     }
+    log('Finalize: creating technical layers');
     var tech = makeTechnicalLayers(ctx.doc);
-    routeTaggedOperationalPaths(tech, ctx.doc);
+    log('Finalize: routing operational paths across address groups');
+    for (var rk in ctx.addrGroups) {
+        if (ctx.addrGroups.hasOwnProperty(rk)) {
+            routeTaggedOperationalPaths(tech, ctx.addrGroups[rk]);
+        }
+    }
+    log('Finalize: copying address controls');
     copyAddressControls(ctx, tech);
+    log('Finalize: GC');
     safeGC();
+    log('Finalize: done');
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
